@@ -1,0 +1,42 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project purpose
+
+This repository holds Claude skills that help a Scouting America (BSA) troop's
+Advancement Chair and Scoutmasters communicate and plan the troop's advancement
+program. The intended output is a set of skills (and any supporting scripts/data)
+that reason over official advancement rules and requirements.
+
+## Current state
+
+The repository is at its inception. It currently contains only:
+
+- `README.md` — one-line statement of purpose.
+- `docs/` — authoritative reference PDFs (see below).
+
+There is no application code, build system, test suite, or skill defined yet.
+When adding those, update this file with the real build/lint/test commands and
+architecture — do not assume conventions that aren't yet established.
+
+## Reference documents (source of truth)
+
+Advancement logic must trace back to these official documents in `docs/`; do not
+rely on memory or general knowledge of Scouting requirements, which change yearly:
+
+- `docs/Scouts-BSA-Requirements-2025.pdf` — the 2025 rank and merit badge
+  requirements. Use this for *what* a Scout must do to advance.
+- `docs/guide-to-advancement-2025.pdf` — the Guide to Advancement 2025, the
+  policy manual governing *how* advancement is administered (boards of review,
+  procedures, roles). Use this for process and policy questions.
+
+These are large PDFs (the Guide to Advancement is ~27 MB). Read specific page
+ranges rather than loading them whole.
+
+## Domain notes
+
+- "Advancement Chair" and "Scoutmaster" are the primary human roles this project
+  serves; skills should frame communication and planning around their needs.
+- Requirements are year-versioned. Keep the year explicit (e.g. 2025) so future
+  updates can add new versions without silently changing behavior.
