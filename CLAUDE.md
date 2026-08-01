@@ -11,14 +11,31 @@ that reason over official advancement rules and requirements.
 
 ## Current state
 
-The repository is at its inception. It currently contains only:
-
 - `README.md` — one-line statement of purpose.
 - `docs/` — authoritative reference PDFs (see below).
+- `.claude/skills/guide-to-advancement/` — answers advancement policy and
+  procedure questions by quoting the Guide to Advancement 2025 with section and
+  printed-page citations.
 
-There is no application code, build system, test suite, or skill defined yet.
-When adding those, update this file with the real build/lint/test commands and
-architecture — do not assume conventions that aren't yet established.
+There is no build system or test suite yet. When adding one, update this file
+with the real build/lint/test commands — do not assume conventions that aren't
+yet established.
+
+### Skill scripts
+
+Scripts are plain Ruby (3.4.5 via asdf), stdlib only — no Gemfile, no gems. Run
+them with `ruby scripts/<name>.rb` from the skill directory.
+
+`guide-to-advancement/scripts/gta.rb` shells out to `pdftotext` (poppler) to
+build a page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt
+on demand). It resolves the Guide's own section numbers to page locations, so
+answers can cite `8.0.1.1` alongside a printed page. Two extraction facts it
+depends on, both verified against the PDF:
+
+- Printed page + 2 = PDF page. The offset is re-measured from page footers at
+  build time rather than hardcoded.
+- Body headings wrap across lines and come out truncated, so full section titles
+  are read from the front-matter contents listing instead.
 
 ## Reference documents (source of truth)
 
