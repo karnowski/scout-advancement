@@ -15,3 +15,8 @@ gem "pdf-reader", "~> 2.15"
 gem "icalendar", "~> 2.12"
 gem "rrule", "~> 0.8"
 gem "tzinfo", "~> 2.0"
+
+# Lint the skill scripts. Not needed at runtime, so it stays unrequired.
+group :development do
+  gem "rubocop", "~> 1.88", require: false
+end

@@ -1,0 +1,31 @@
+# Offenses that predate RuboCop, kept here rather than in .rubocop.yml so they
+# read as debt and not as policy. Entries name the specific methods that were
+# already over the limit; the limits still apply everywhere else, so new code
+# cannot quietly join this list.
+#
+#   find_headings — matches body headings against the contents listing.
+#   cmd_search, cmd_section, sync — subcommand bodies that do the argument
+#   handling, the work, and the printing in one method.
+#
+# Delete a name from here when its method is broken up.
+
+Metrics/AbcSize:
+  AllowedMethods:
+    - find_headings
+    - cmd_search
+    - cmd_section
+    - sync
+
+Metrics/CyclomaticComplexity:
+  AllowedMethods:
+    - find_headings
+    - cmd_section
+
+Metrics/PerceivedComplexity:
+  AllowedMethods:
+    - find_headings
+    - cmd_section
+
+Metrics/MethodLength:
+  AllowedMethods:
+    - find_headings

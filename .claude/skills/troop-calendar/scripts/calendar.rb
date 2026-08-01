@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+
 #
 # troop-calendar — read the troop's published iCal feed.
 #
@@ -23,7 +24,6 @@ require "date"
 require "fileutils"
 require "json"
 require "net/http"
-require "set"
 require "time"
 
 require "icalendar"
@@ -158,10 +158,11 @@ module ICS
               end
     stop = zone.local_time(window_end.year, window_end.month, window_end.day)
 
-    event.rrule.flat_map do |rule|
+    times = event.rrule.flat_map do |rule|
       RRule::Rule.new(rule.value_ical, dtstart: dtstart, tzid: zone.identifier)
                  .between(dtstart, stop)
-    end.map { |time| zone.to_local(time).to_date }
+    end
+    times.map { |time| zone.to_local(time).to_date }
   end
 
   # Flatten every VEVENT into concrete occurrences within the window.
@@ -169,7 +170,7 @@ module ICS
     masters, overrides = calendar.events.partition { |e| e.recurrence_id.nil? }
 
     # A RECURRENCE-ID event replaces (or cancels) one instance of its master.
-    overridden = overrides.map { |e| [e.uid.to_s, local_date(zone, e.recurrence_id)] }.to_set
+    overridden = overrides.to_set { |e| [e.uid.to_s, local_date(zone, e.recurrence_id)] }
 
     rows = []
 
@@ -178,7 +179,7 @@ module ICS
       next if cancelled?(event)
 
       uid = event.uid.to_s
-      exdates = event.exdate.flatten.map { |v| local_date(zone, v) }.to_set
+      exdates = event.exdate.flatten.to_set { |v| local_date(zone, v) }
 
       start_dates(zone, event, window_end).each do |date|
         next if exdates.include?(date)
@@ -294,7 +295,10 @@ def sync(force: false, quiet: false)
   DB.set_meta("window_end", window_end)
   DB.set_meta("event_count", rows.size)
 
-  warn "Synced #{rows.size} occurrences (#{window_start}..#{window_end}), timezone #{zone.identifier}." unless quiet
+  return if quiet
+
+  warn "Synced #{rows.size} occurrences (#{window_start}..#{window_end}), " \
+       "timezone #{zone.identifier}."
 end
 
 def ensure_synced
@@ -333,8 +337,11 @@ def format_when(row)
   has_end = !row["end_time"].to_s.empty?
 
   if row["all_day"] == 1
-    multi ? "#{start_d.strftime('%a %b %-d')} – #{end_d.strftime('%a %b %-d')} (all day)"
-          : "#{start_d.strftime('%a %b %-d')} (all day)"
+    if multi
+      "#{start_d.strftime('%a %b %-d')} – #{end_d.strftime('%a %b %-d')} (all day)"
+    else
+      "#{start_d.strftime('%a %b %-d')} (all day)"
+    end
   elsif multi
     tail = has_end ? " #{pretty_time(row['end_time'])}" : ""
     "#{start_d.strftime('%a %b %-d')} #{pretty_time(row['start_time'])} – " \
@@ -403,7 +410,9 @@ when "events", "search"
   from    = flag(args, "--from")
   to      = flag(args, "--to")
   pattern = command == "search" ? args.shift : nil
-  abort "usage: calendar.rb search PATTERN [--from DATE] [--to DATE]" if command == "search" && pattern.nil?
+  if command == "search" && pattern.nil?
+    abort "usage: calendar.rb search PATTERN [--from DATE] [--to DATE]"
+  end
 
   from_d = from ? parse_date(from, "--from") : Date.today
   to_d   = to   ? parse_date(to, "--to")     : from_d + 90

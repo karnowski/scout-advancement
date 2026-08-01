@@ -1,0 +1,81 @@
+inherit_from: .rubocop_todo.yml
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  # The skill scripts live under .claude/, which RuboCop's directory walk skips
+  # because it is hidden. Name them explicitly, alongside the default globs.
+  Include:
+    - "**/*.rb"
+    - "**/Gemfile"
+    - ".claude/skills/*/scripts/*.rb"
+  Exclude:
+    - ".claude/skills/*/.cache/**/*"
+    - "vendor/**/*"
+
+# The existing scripts are double-quoted throughout.
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+# Inside an interpolation, single quotes keep the nesting readable:
+# `"#{row['summary']}"` rather than `"#{row["summary"]}"`.
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: single_quotes
+
+Layout/LineLength:
+  Max: 100
+
+# Both scripts line up related constants, trailing comments, and hash values
+# into columns; that alignment is deliberate and worth keeping.
+Layout/ExtraSpacing:
+  AllowForAlignment: true
+  AllowBeforeTrailingComments: true
+
+Layout/HashAlignment:
+  EnforcedColonStyle:
+    - key
+    - table
+
+# Bundler evaluates the Gemfile itself; the magic comment belongs in the
+# scripts, not there.
+Style/FrozenStringLiteralComment:
+  Exclude:
+    - "Gemfile"
+
+# A skill script is one file: the tool plus the small modules it is built from.
+Style/OneClassPerFile:
+  Enabled: false
+
+# `format("%-12s %s%s  (p.%d)", ...)` is clearer as a column template than the
+# same string with four named tokens spliced into it.
+Style/FormatStringToken:
+  MaxUnannotatedPlaceholdersAllowed: 4
+
+# Each script is a single-file command-line tool: one long `case` dispatching
+# subcommands, plus the format/parse helpers those subcommands need. Splitting
+# them into classes to satisfy a length metric would not make them clearer.
+Metrics/ModuleLength:
+  Enabled: false
+
+Metrics/BlockLength:
+  Enabled: false
+
+Metrics/MethodLength:
+  Max: 40
+
+Metrics/AbcSize:
+  Max: 40
+
+Metrics/CyclomaticComplexity:
+  Max: 15
+
+Metrics/PerceivedComplexity:
+  Max: 15
+
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+# Documentation comments on every class are noise in scripts this size; the
+# file-header comment at the top of each already explains the whole tool.
+Style/Documentation:
+  Enabled: false

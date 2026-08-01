@@ -24,6 +24,7 @@
 #     gta.rb toc [--section 8]
 #     gta.rb build [--force]
 
+require "fileutils"
 require "json"
 require "open3"
 require "optparse"
@@ -91,7 +92,9 @@ def measure_page_offset(pages)
   return DEFAULT_PAGE_OFFSET if tally.empty?
 
   offset, count = tally.max_by { |_, n| n }
-  warn "warning: page offset is inconsistent (#{tally.inspect}); using #{offset}" if count < tally.values.sum
+  if count < tally.values.sum
+    warn "warning: page offset is inconsistent (#{tally.inspect}); using #{offset}"
+  end
   offset
 end
 
@@ -208,7 +211,7 @@ def find_headings(pages, offset)
       # The contents listing has the untruncated title; fall back to the body heading.
       "title" => titles[num] || pick[2]
     }
-    floor = [pick[0], pick[1]] if ([pick[0], pick[1]] <=> floor) > 0
+    floor = [pick[0], pick[1]] if ([pick[0], pick[1]] <=> floor).positive?
   end
 
   # Appendix forms print their title but not their section number, so they have no
@@ -233,7 +236,7 @@ def build(force: false)
     return
   end
 
-  Dir.mkdir(CACHE) unless Dir.exist?(CACHE)
+  FileUtils.mkdir_p(CACHE)
   pages = extract_pages
   offset = measure_page_offset(pages)
   sections = find_headings(pages, offset)
@@ -311,7 +314,7 @@ def cmd_search(argv)
 
       if shown >= max
         puts "\n... stopped at #{max} matches; narrow the pattern or raise --max"
-        return
+        return # rubocop:disable Lint/NonLocalExitFromIterator -- stops both loops
       end
       shown += 1
       num = section_for(positions, pdf_page, line_no)
@@ -335,7 +338,7 @@ def cmd_section(argv)
     # Try the number itself as a prefix, then widen to its parents: 8.0.9.9 -> 8.0 -> 8.
     prefixes = num.split(".").length.downto(1).map { |n| num.split(".").first(n).join(".") }
     near = prefixes.lazy.map { |p| sections.keys.select { |s| s.start_with?(p) } }
-                   .find { |hits| !hits.empty? } || []
+                        .find { |hits| !hits.empty? } || []
     near = near.sort_by { |s| section_key(s) }.first(8)
     hint = near.empty? ? "" : " Did you mean: #{near.join(', ')}"
     die "unknown section #{num}.#{hint}"
@@ -378,12 +381,15 @@ def cmd_page(argv)
 
   (first..last).each do |printed|
     pdf_page = printed + offset
-    die "printed page #{printed} out of range (1..#{pages.size - offset})" unless (1..pages.size).cover?(pdf_page)
+    unless (1..pages.size).cover?(pdf_page)
+      die "printed page #{printed} out of range (1..#{pages.size - offset})"
+    end
 
     # What the page opens in, then what begins on it -- a page usually spans several.
     opens_in = section_for(positions, pdf_page, -1)
     starts = positions.select { |page, _, _| page == pdf_page }.map(&:last)
-    header = "=== printed p.#{printed} / PDF p.#{pdf_page} — opens in #{opens_in.empty? ? '?' : opens_in}"
+    header = "=== printed p.#{printed} / PDF p.#{pdf_page} " \
+             "— opens in #{opens_in.empty? ? '?' : opens_in}"
     header += "; begins here: #{starts.join(', ')}" unless starts.empty?
     puts header
     puts pages[pdf_page - 1].sub(/\A\n+/, "").sub(/\n+\z/, "")

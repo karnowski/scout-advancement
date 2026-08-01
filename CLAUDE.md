@@ -21,9 +21,26 @@ that reason over official advancement rules and requirements.
   planning.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
+- `.rubocop.yml` / `.rubocop_todo.yml` — lint configuration (see below).
 
 There is no test suite yet. When adding one, update this file with the real
-lint/test commands — do not assume conventions that aren't yet established.
+test command — do not assume conventions that aren't yet established.
+
+### Linting
+
+    bundle exec rubocop        # lint everything
+    bundle exec rubocop -a     # apply the safe autocorrections
+
+RuboCop skips hidden directories, so `.claude/skills/*/scripts/*.rb` is named
+explicitly in `AllCops: Include`. Without that entry it silently inspects
+nothing but the `Gemfile` and still reports success.
+
+`.rubocop.yml` holds the settled style; `.rubocop_todo.yml` holds what predates
+the linter. The todo file grandfathers four over-long methods **by name**
+(`AllowedMethods`) rather than excluding whole files, so the metrics still apply
+to everything else — keep it that way when regenerating, since
+`rubocop --auto-gen-config` writes file-level excludes instead. Delete a name
+from the todo file when its method is broken up; don't add new ones.
 
 ### Dependencies
 
