@@ -4,8 +4,7 @@
 # troop-calendar — read the troop's published iCal feed.
 #
 # Downloads the feed, expands recurring events into concrete occurrences, and
-# caches them in SQLite under .cache/calendar.db.  Stdlib only; shells out to
-# `curl` and the `sqlite3` CLI.
+# caches them in SQLite under .cache/calendar.db.
 #
 #   ruby scripts/calendar.rb sync [--force]
 #   ruby scripts/calendar.rb events [--from DATE] [--to DATE] [--json]
@@ -14,15 +13,27 @@
 #   ruby scripts/calendar.rb search PATTERN [--from DATE] [--to DATE]
 #   ruby scripts/calendar.rb info
 
-require "date"
-require "time"
-require "json"
-require "shellwords"
+SKILL_DIR = File.expand_path("..", __dir__)
+REPO_ROOT = File.expand_path("../../..", SKILL_DIR)
+ENV["BUNDLE_GEMFILE"] ||= File.join(REPO_ROOT, "Gemfile")
 
-SKILL_DIR  = File.expand_path("..", __dir__)
-CACHE_DIR  = File.join(SKILL_DIR, ".cache")
-DB_PATH    = File.join(CACHE_DIR, "calendar.db")
-ICS_PATH   = File.join(CACHE_DIR, "feed.ics")
+require "bundler/setup"
+
+require "date"
+require "fileutils"
+require "json"
+require "net/http"
+require "set"
+require "time"
+
+require "icalendar"
+require "rrule"
+require "sqlite3"
+require "tzinfo"
+
+CACHE_DIR = File.join(SKILL_DIR, ".cache")
+DB_PATH   = File.join(CACHE_DIR, "calendar.db")
+ICS_PATH  = File.join(CACHE_DIR, "feed.ics")
 
 # Official Troop 400 calendar (public iCal feed; see README.md).
 DEFAULT_FEED_URL =
@@ -36,45 +47,34 @@ BACK_YEARS    = 2                 # expansion window around today
 FWD_YEARS     = 3
 
 # --------------------------------------------------------------------------
-# sqlite3 CLI wrapper
+# storage
 # --------------------------------------------------------------------------
 module DB
   module_function
 
-  def exec_sql(sql)
-    IO.popen([ "sqlite3", DB_PATH ], "r+") do |io|
-      io.write(sql)
-      io.close_write
-      io.read
+  def handle
+    @handle ||= begin
+      FileUtils.mkdir_p(CACHE_DIR)
+      db = SQLite3::Database.new(DB_PATH)
+      db.results_as_hash = true
+      db
     end
-    abort "sqlite3 failed" unless $?.success?
   end
 
-  def query(sql)
-    out = IO.popen([ "sqlite3", "-json", DB_PATH, sql ], &:read)
-    abort "sqlite3 query failed" unless $?.success?
-    out.strip.empty? ? [] : JSON.parse(out)
-  end
-
-  def quote(str) = "'#{str.to_s.gsub("'", "''")}'"
+  def query(sql, params = []) = handle.execute(sql, params)
 
   def ready? = File.exist?(DB_PATH)
 
   def init
-    exec_sql(<<~SQL)
-      CREATE TABLE IF NOT EXISTS meta (
-        key   TEXT PRIMARY KEY,
-        value TEXT
-      );
-    SQL
+    handle.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
 
     # The cache is disposable; on a schema change just rebuild it.
     if meta("schema_version") != SCHEMA_VERSION.to_s
-      exec_sql("DROP TABLE IF EXISTS occurrences;")
+      handle.execute("DROP TABLE IF EXISTS occurrences")
       set_meta("synced_at", "")
     end
 
-    exec_sql(<<~SQL)
+    handle.execute_batch(<<~SQL)
       CREATE TABLE IF NOT EXISTS occurrences (
         uid         TEXT NOT NULL,
         start_date  TEXT NOT NULL,             -- YYYY-MM-DD, calendar-local
@@ -92,237 +92,130 @@ module DB
     set_meta("schema_version", SCHEMA_VERSION.to_s)
   end
 
+  # Called before init on a fresh cache, so a missing table is not an error.
   def meta(key)
-    row = query("SELECT value FROM meta WHERE key = #{quote(key)};").first
-    row && row["value"]
+    handle.get_first_value("SELECT value FROM meta WHERE key = ?", key)
+  rescue SQLite3::SQLException
+    nil
   end
 
   def set_meta(key, value)
-    exec_sql("INSERT INTO meta (key, value) VALUES (#{quote(key)}, #{quote(value)}) " \
-             "ON CONFLICT(key) DO UPDATE SET value = excluded.value;")
+    handle.execute("INSERT INTO meta (key, value) VALUES (?, ?) " \
+                   "ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, value.to_s])
+  end
+
+  COLUMNS = %i[uid start_date start_time end_date end_time
+               all_day summary location description].freeze
+
+  def replace_occurrences(rows)
+    handle.transaction do
+      handle.execute("DELETE FROM occurrences")
+      stmt = handle.prepare(
+        "INSERT OR REPLACE INTO occurrences (#{COLUMNS.join(',')}) " \
+        "VALUES (#{(['?'] * COLUMNS.size).join(',')})"
+      )
+      rows.each { |row| stmt.execute(row.values_at(*COLUMNS)) }
+      stmt.close
+    end
   end
 end
 
 # --------------------------------------------------------------------------
-# iCal parsing
+# iCal -> occurrences
+#
+# The icalendar gem handles unfolding, escaping, and TZID/UTC stamps; the rrule
+# gem handles RRULE expansion.  What is left here is the feed's own shape: a
+# RECURRENCE-ID event replaces one instance of its master, and DTEND means
+# something different for all-day events than for timed ones.
 # --------------------------------------------------------------------------
 module ICS
-  DAYS = { "SU" => 0, "MO" => 1, "TU" => 2, "WE" => 3,
-           "TH" => 4, "FR" => 5, "SA" => 6 }.freeze
-
   module_function
 
-  # RFC 5545: unfold continuation lines, then split into VEVENT property maps.
-  def parse(raw)
-    lines = raw.gsub(/\r\n[ \t]/, "").gsub(/\n[ \t]/, "").split(/\r?\n/)
-    events = []
-    cur = nil
-    lines.each do |line|
-      case line
-      when "BEGIN:VEVENT" then cur = {}
-      when "END:VEVENT"
-        events << cur if cur
-        cur = nil
-      else
-        next unless cur
-        name, value = line.split(":", 2)
-        next unless value
-        key, *params = name.split(";")
-        pmap = params.to_h { |x| k, v = x.split("=", 2); [ k.upcase, v ] }
-        (cur[key.upcase] ||= []) << [ pmap, value ]
-      end
-    end
-    events
+  def all_day?(value) = value.is_a?(Icalendar::Values::Date)
+
+  # Every stored date and time is calendar-local wall clock, so UTC stamps in the
+  # feed have to be converted; the machine's own timezone never enters into it.
+  def local_date(zone, value)
+    all_day?(value) ? value.to_date : zone.to_local(value.to_time).to_date
   end
 
-  def calendar_tz(raw)
-    raw[/^X-WR-TIMEZONE:(.+)$/, 1]&.strip || DEFAULT_TZ
+  def local_hhmm(zone, value)
+    all_day?(value) ? "" : zone.to_local(value.to_time).strftime("%H:%M")
   end
 
-  def unescape(str)
-    str.to_s.gsub("\\n", "\n").gsub("\\N", "\n")
-       .gsub("\\,", ",").gsub("\\;", ";").gsub("\\\\", "\\")
+  def cancelled?(event) = event.status.to_s == "CANCELLED"
+
+  # Start dates for one master event, within the window.
+  def start_dates(zone, event, window_end)
+    first = local_date(zone, event.dtstart)
+    return [first] if event.rrule.empty?
+
+    # Noon rather than midnight: a date can never be pushed across a DST shift.
+    dtstart = if all_day?(event.dtstart)
+                zone.local_time(first.year, first.month, first.day, 12)
+              else
+                event.dtstart.to_time
+              end
+    stop = zone.local_time(window_end.year, window_end.month, window_end.day)
+
+    event.rrule.flat_map do |rule|
+      RRule::Rule.new(rule.value_ical, dtstart: dtstart, tzid: zone.identifier)
+                 .between(dtstart, stop)
+    end.map { |time| zone.to_local(time).to_date }
   end
-
-  # => [Date (all-day) | Time (local), all_day?]
-  def parse_dt(param, value)
-    value = value.strip
-    if param["VALUE"] == "DATE" || value.match?(/\A\d{8}\z/)
-      [ Date.strptime(value, "%Y%m%d"), true ]
-    elsif value.end_with?("Z")
-      y, mo, d, h, mi, s = value.scan(/\A(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z\z/)
-                                .first.map(&:to_i)
-      [ Time.utc(y, mo, d, h, mi, s).getlocal, false ]
-    else
-      # Floating time, or TZID=<calendar tz>.  ENV["TZ"] is set to the feed's
-      # own timezone before parsing, so a literal local parse is correct.
-      [ Time.strptime(value, "%Y%m%dT%H%M%S"), false ]
-    end
-  end
-
-  def to_date(val) = val.is_a?(Date) ? val : val.to_date
-
-  # nth weekday of a month; n may be negative (-1 = last).  nil if out of month.
-  def nth_wday(year, month, wday, num)
-    if num.positive?
-      first = Date.new(year, month, 1)
-      date  = first + ((wday - first.wday) % 7) + (num - 1) * 7
-    else
-      last = Date.new(year, month, -1)
-      date = last - ((last.wday - wday) % 7) + (num + 1) * 7
-    end
-    date.month == month ? date : nil
-  end
-
-  # Expand an RRULE to start Dates.  Time-of-day is carried from DTSTART.
-  def expand(rule, start_date, window_end)
-    parts = rule.split(";").to_h { |kv| k, v = kv.split("=", 2); [ k.upcase, v ] }
-    interval = [ parts["INTERVAL"].to_i, 1 ].max
-    count    = parts["COUNT"]&.to_i
-    until_d  = parts["UNTIL"] ? Date.strptime(parts["UNTIL"][0, 8], "%Y%m%d") : nil
-    bydays   = parts["BYDAY"]&.split(",") || []
-    bymonths = parts["BYMONTH"]&.split(",")&.map(&:to_i)
-    stop     = [ window_end, until_d ].compact.min
-
-    out = []
-    emitted = 0
-    push = lambda do |date|
-      return if date.nil? || date < start_date
-      emitted += 1                       # COUNT counts every instance the rule
-      out << date if date <= stop        # generates, including ones past `stop`
-    end
-
-    case parts["FREQ"]&.upcase
-    when "DAILY"
-      date = start_date
-      while date <= stop && !(count && emitted >= count)
-        push.call(date)
-        date += interval
-      end
-
-    when "WEEKLY"
-      wdays = bydays.empty? ? [ start_date.wday ] : bydays.filter_map { |b| DAYS[b[-2..]] }
-      week  = start_date - start_date.wday          # Sunday of DTSTART's week
-      while week <= stop && !(count && emitted >= count)
-        wdays.sort.each do |wd|
-          break if count && emitted >= count
-          push.call(week + wd)
-        end
-        week += 7 * interval
-      end
-
-    when "MONTHLY"
-      month = Date.new(start_date.year, start_date.month, 1)
-      while month <= stop && !(count && emitted >= count)
-        monthly_candidates(month, bydays, start_date).each do |date|
-          break if count && emitted >= count
-          push.call(date)
-        end
-        month = month >> interval
-      end
-
-    when "YEARLY"
-      year = start_date.year
-      while Date.new(year, 1, 1) <= stop && !(count && emitted >= count)
-        (bymonths || [ start_date.month ]).each do |mo|
-          monthly_candidates(Date.new(year, mo, 1), bydays, start_date).each do |date|
-            break if count && emitted >= count
-            push.call(date)
-          end
-        end
-        year += interval
-      end
-    end
-
-    out.uniq.sort
-  end
-
-  def monthly_candidates(month, bydays, start_date)
-    if bydays.empty?
-      [ safe_date(month.year, month.month, start_date.day) ]
-    else
-      bydays.map do |byday|
-        num = byday[0..-3].to_i
-        nth_wday(month.year, month.month, DAYS[byday[-2..]], num.zero? ? 1 : num)
-      end
-    end.compact.sort
-  end
-
-  def safe_date(year, month, day)
-    Date.valid_date?(year, month, day) ? Date.new(year, month, day) : nil
-  end
-
-  def cancelled?(event) = event["STATUS"]&.first&.last == "CANCELLED"
 
   # Flatten every VEVENT into concrete occurrences within the window.
-  def occurrences(events, window_end)
-    masters, overrides = events.partition { |e| e["RECURRENCE-ID"].nil? }
+  def occurrences(calendar, zone, window_end)
+    masters, overrides = calendar.events.partition { |e| e.recurrence_id.nil? }
 
     # A RECURRENCE-ID event replaces (or cancels) one instance of its master.
-    overridden = {}
-    overrides.each do |event|
-      uid = event["UID"]&.first&.last or next
-      rid, = parse_dt(*event["RECURRENCE-ID"].first)
-      overridden[[ uid, to_date(rid) ]] = true
-    end
+    overridden = overrides.map { |e| [e.uid.to_s, local_date(zone, e.recurrence_id)] }.to_set
 
-    out = []
+    rows = []
 
     masters.each do |event|
-      next unless event["DTSTART"]
-      uid = event["UID"]&.first&.last or next
-      start_val, = parse_dt(*event["DTSTART"].first)
-      start_date = to_date(start_val)
+      next unless event.dtstart
+      next if cancelled?(event)
 
-      exdates = (event["EXDATE"] || []).flat_map do |param, value|
-        value.split(",").map { |v| to_date(parse_dt(param, v).first) }
-      end
+      uid = event.uid.to_s
+      exdates = event.exdate.flatten.map { |v| local_date(zone, v) }.to_set
 
-      dates =
-        if event["RRULE"]
-          expand(event["RRULE"].first.last, start_date, window_end)
-        else
-          [ start_date ]
-        end
-
-      dates.each do |date|
+      start_dates(zone, event, window_end).each do |date|
         next if exdates.include?(date)
-        next if overridden[[ uid, date ]]     # emitted from the override below
-        next if cancelled?(event)
-        out << build(event, date)
+        next if overridden.include?([uid, date])   # emitted from the override below
+
+        rows << build(zone, event, date)
       end
     end
 
     overrides.each do |event|
       next if cancelled?(event)
-      next unless event["DTSTART"]
-      out << build(event, to_date(parse_dt(*event["DTSTART"].first).first))
+      next unless event.dtstart
+
+      rows << build(zone, event, local_date(zone, event.dtstart))
     end
 
-    out
+    rows
   end
 
-  # One occurrence row, with the master's time-of-day and duration applied to
-  # the given start date.
-  def build(event, date)
-    start_val, all_day = parse_dt(*event["DTSTART"].first)
-    end_raw   = event["DTEND"]&.first
-    end_val, = end_raw ? parse_dt(*end_raw) : [ nil, nil ]
-
-    span = end_val ? (to_date(end_val) - to_date(start_val)).to_i : 0
+  # One occurrence row, with the event's time-of-day and duration applied to the
+  # given start date.
+  def build(zone, event, date)
+    all_day = all_day?(event.dtstart)
+    span = event.dtend ? (local_date(zone, event.dtend) - local_date(zone, event.dtstart)).to_i : 0
     span -= 1 if all_day && span.positive?   # DTEND is exclusive for all-day
     span = 0 if span.negative?
 
     {
-      uid:         event["UID"].first.last,
+      uid:         event.uid.to_s,
       start_date:  date.to_s,
-      start_time:  all_day ? "" : start_val.strftime("%H:%M"),
+      start_time:  local_hhmm(zone, event.dtstart),
       end_date:    (date + span).to_s,
-      end_time:    (end_val && !all_day) ? end_val.strftime("%H:%M") : "",
+      end_time:    event.dtend ? local_hhmm(zone, event.dtend) : "",
       all_day:     all_day ? 1 : 0,
-      summary:     unescape(event["SUMMARY"]&.first&.last).strip,
-      location:    unescape(event["LOCATION"]&.first&.last).strip,
-      description: unescape(event["DESCRIPTION"]&.first&.last).strip,
+      summary:     event.summary.to_s.strip,
+      location:    event.location.to_s.strip,
+      description: event.description.to_s.strip
     }
   end
 end
@@ -334,23 +227,32 @@ def feed_url
   ENV["TROOP_CALENDAR_URL"] || (DB.ready? ? DB.meta("feed_url") : nil) || DEFAULT_FEED_URL
 end
 
-def download(url)
-  raw = IO.popen([ "curl", "-sS", "-L", "--max-time", "60", url ], &:read)
-  raise "download failed (curl exit #{$?.exitstatus})" unless $?.success?
+def download(url, redirects: 5)
+  raise "too many redirects fetching the feed" if redirects.negative?
+
+  response = Net::HTTP.get_response(URI.parse(url))
+  case response
+  when Net::HTTPRedirection then return download(response["location"], redirects: redirects - 1)
+  when Net::HTTPSuccess then nil
+  else raise "download failed (HTTP #{response.code})"
+  end
+
+  raw = response.body.to_s.force_encoding("UTF-8")
   raise "response is not an iCalendar feed" unless raw.include?("BEGIN:VCALENDAR")
+
   raw
 end
 
 def synced_time
   raw = DB.ready? ? DB.meta("synced_at") : nil
   return nil if raw.nil? || raw.empty?
+
   Time.parse(raw)
 rescue ArgumentError
   nil
 end
 
 def sync(force: false, quiet: false)
-  Dir.mkdir(CACHE_DIR) unless Dir.exist?(CACHE_DIR)
   DB.init
 
   synced_at = synced_time
@@ -363,65 +265,55 @@ def sync(force: false, quiet: false)
   begin
     raw = download(url)
     File.write(ICS_PATH, raw)
+    # Only remember a URL that actually served a feed, so a bad
+    # TROOP_CALENDAR_URL cannot poison later runs.
+    DB.set_meta("feed_url", url)
   rescue StandardError => e
     # Offline or the feed is down: re-expand whatever we last downloaded.
     raise "#{e.message}, and no cached feed to fall back on" unless File.exist?(ICS_PATH)
+
     warn "WARNING: #{e.message}. Re-using the feed downloaded #{synced_at&.iso8601 || 'earlier'}."
     raw = File.read(ICS_PATH, encoding: "UTF-8")
   end
 
-  tz = ICS.calendar_tz(raw)
-  ENV["TZ"] = tz
+  calendar = Icalendar::Calendar.parse(raw).first or raise "no VCALENDAR in the feed"
+  zone = TZInfo::Timezone.get(calendar.x_wr_timezone.first || DEFAULT_TZ)
 
   today = Date.today
-  window_end = Date.new(today.year + FWD_YEARS, today.month, 1)
+  window_end   = Date.new(today.year + FWD_YEARS, today.month, 1)
   window_start = Date.new(today.year - BACK_YEARS, today.month, 1)
 
-  events = ICS.parse(raw)
-  rows = ICS.occurrences(events, window_end)
-           .select { |o| Date.parse(o[:end_date]) >= window_start }
-           .uniq { |o| [ o[:uid], o[:start_date], o[:start_time] ] }
+  rows = ICS.occurrences(calendar, zone, window_end)
+            .select { |o| Date.parse(o[:end_date]) >= window_start }
+            .uniq { |o| [o[:uid], o[:start_date], o[:start_time]] }
+  DB.replace_occurrences(rows)
 
-  values = rows.map do |o|
-    "(#{DB.quote(o[:uid])},#{DB.quote(o[:start_date])},#{DB.quote(o[:start_time])}," \
-      "#{DB.quote(o[:end_date])},#{DB.quote(o[:end_time])}," \
-      "#{o[:all_day]},#{DB.quote(o[:summary])}," \
-      "#{DB.quote(o[:location])},#{DB.quote(o[:description])})"
-  end
-
-  sql = +"BEGIN;\nDELETE FROM occurrences;\n"
-  values.each_slice(400) do |slice|
-    sql << "INSERT OR REPLACE INTO occurrences (uid,start_date,start_time,end_date," \
-           "end_time,all_day,summary,location,description) VALUES\n"
-    sql << slice.join(",\n") << ";\n"
-  end
-  sql << "COMMIT;\n"
-  DB.exec_sql(sql)
-
-  DB.set_meta("feed_url", url)
-  DB.set_meta("timezone", tz)
+  DB.set_meta("timezone", zone.identifier)
   DB.set_meta("synced_at", Time.now.iso8601)
-  DB.set_meta("window_start", window_start.to_s)
-  DB.set_meta("window_end", window_end.to_s)
-  DB.set_meta("event_count", rows.size.to_s)
+  DB.set_meta("window_start", window_start)
+  DB.set_meta("window_end", window_end)
+  DB.set_meta("event_count", rows.size)
 
-  warn "Synced #{rows.size} occurrences (#{window_start}..#{window_end}), timezone #{tz}." unless quiet
+  warn "Synced #{rows.size} occurrences (#{window_start}..#{window_end}), timezone #{zone.identifier}." unless quiet
 end
 
 def ensure_synced
   at = synced_time
-  ENV["TZ"] = (DB.ready? && DB.meta("timezone")) || DEFAULT_TZ
   sync(quiet: true) if at.nil? || (Time.now - at) >= STALE_SECONDS
-  ENV["TZ"] = (DB.meta("timezone") || DEFAULT_TZ)
 end
 
 # --------------------------------------------------------------------------
 # queries + output
 # --------------------------------------------------------------------------
 def fetch(from:, to:, pattern: nil)
-  where = [ "end_date >= #{DB.quote(from)}", "start_date <= #{DB.quote(to)}" ]
-  where << "summary LIKE #{DB.quote("%#{pattern}%")} COLLATE NOCASE" if pattern
-  DB.query(<<~SQL)
+  where = ["end_date >= ?", "start_date <= ?"]
+  params = [from, to]
+  if pattern
+    where << "summary LIKE ? COLLATE NOCASE"
+    params << "%#{pattern}%"
+  end
+
+  DB.query(<<~SQL, params)
     SELECT start_date, start_time, end_date, end_time, all_day, summary, location, description
     FROM occurrences
     WHERE #{where.join(' AND ')}
@@ -488,6 +380,7 @@ command = args.shift
 def flag(args, name, default = nil)
   idx = args.index(name)
   return default unless idx
+
   args.delete_at(idx)
   args.delete_at(idx) || default
 end

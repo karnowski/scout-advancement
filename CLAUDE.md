@@ -20,38 +20,62 @@ that reason over official advancement rules and requirements.
   from the troop's published iCal feed, and connects dates to advancement
   planning.
 
-There is no build system or test suite yet. When adding one, update this file
-with the real build/lint/test commands — do not assume conventions that aren't
-yet established.
+- `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
+
+There is no test suite yet. When adding one, update this file with the real
+lint/test commands — do not assume conventions that aren't yet established.
+
+### Dependencies
+
+Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
+`Gemfile`. Install with `bundle install`.
+
+Prefer a well-maintained gem over hand-rolling a parser for a standard format —
+iCalendar, RRULE, and PDF text extraction are all specified formats with edge
+cases that are easy to get subtly wrong. Keep the dependency list short and
+justified; add a gem when it removes real logic, not for convenience wrappers
+around one or two stdlib calls.
+
+Scripts still run as `ruby scripts/<name>.rb` from the skill directory: each one
+sets `BUNDLE_GEMFILE` to the repo-root `Gemfile` and requires `bundler/setup`
+before anything else, so no `bundle exec` prefix is needed.
 
 ### Skill scripts
-
-Scripts are plain Ruby (3.4.5 via asdf), stdlib only — no Gemfile, no gems. Run
-them with `ruby scripts/<name>.rb` from the skill directory.
 
 `guide-to-advancement/scripts/gta.rb` shells out to `pdftotext` (poppler) to
 build a page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt
 on demand). It resolves the Guide's own section numbers to page locations, so
-answers can cite `8.0.1.1` alongside a printed page. Two extraction facts it
-depends on, both verified against the PDF:
+answers can cite `8.0.1.1` alongside a printed page. Three extraction facts it
+depends on, all verified against the PDF:
 
 - Printed page + 2 = PDF page. The offset is re-measured from page footers at
   build time rather than hardcoded.
 - Body headings wrap across lines and come out truncated, so full section titles
   are read from the front-matter contents listing instead.
+- `pdftotext` is deliberate here and should not be swapped for the `pdf-reader`
+  gem. On *this* PDF, pdf-reader interleaves the two columns line by line and
+  emits headings with no inter-word spaces (`8.0.1.1NotaRetestor`), which makes
+  section titles unrecoverable. pdf-reader is fine on the single-column
+  `docs/Scouts-BSA-Requirements-2025.pdf`.
 
-`troop-calendar/scripts/calendar.rb` shells out to `curl` and the `sqlite3` CLI
-(the `sqlite3` gem is not installed and would violate the stdlib-only rule) to
-cache the troop's iCal feed as expanded occurrences in `.cache/calendar.db`. It
-re-syncs automatically when the cache is older than six hours. Facts about the
+`troop-calendar/scripts/calendar.rb` fetches the troop's iCal feed over
+`net/http` and caches it as expanded occurrences in `.cache/calendar.db`. It
+re-syncs automatically when the cache is older than six hours. It uses
+`icalendar` to parse the feed, `rrule` to expand recurrence rules, `tzinfo` to
+convert to calendar-local time, and `sqlite3` for the cache. Facts about the
 feed it depends on, all verified against it:
 
 - Times come in three flavors: `VALUE=DATE` all-day, UTC (`...Z`), and
-  `TZID=America/New_York`. UTC stamps must be converted — a naive parse that
-  treats the trailing `Z` as a literal shifts evening events by four hours.
+  `TZID=America/New_York`. Everything stored is calendar-local wall clock, so
+  UTC stamps are converted through `tzinfo` — never through the machine's own
+  timezone.
 - Recurrence is override-heavy: ~130 `RECURRENCE-ID` events move or rename
-  single instances of a series. An override replaces its master's occurrence on
-  that date; `EXDATE` and `STATUS:CANCELLED` remove it.
+  single instances of a series. The gems do not model this, so the script does:
+  an override replaces its master's occurrence on that date; `EXDATE` and
+  `STATUS:CANCELLED` remove it.
+- `RRULE:...;UNTIL=...Z` is a UTC instant, not a date. Several series end at
+  `T045959Z`, which is 23:59:59 the previous day in Eastern time; truncating
+  `UNTIL` to its date part yields one occurrence too many per series.
 - `DTEND` is exclusive for all-day events but inclusive-in-effect for timed
   ones, so multi-day spans are computed differently for each.
 
@@ -79,4 +103,5 @@ ranges rather than loading them whole.
 ## Technology Preferences
 
 - Prefer Ruby 3.4.5 (via asdf) for scripts.
-- Use SQLite for any local data storage.
+- Use SQLite for any local data storage, via the `sqlite3` gem.
+- Manage gems with Bundler and the repo-root `Gemfile`.

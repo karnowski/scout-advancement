@@ -14,7 +14,8 @@ continuously by troop leadership; the feed is the only current record of it.
 `scripts/calendar.rb` downloads the feed, expands recurring events into concrete
 occurrences, and caches them in SQLite under `.cache/calendar.db`.  It syncs
 automatically when the cache is missing or more than six hours old, so normally
-you can go straight to a query command.
+you can go straight to a query command.  It needs the repo's gems; if a command
+reports a missing gem, run `bundle install` from the repository root.
 
 ```
 ruby scripts/calendar.rb next [--days N]                 # default 30
