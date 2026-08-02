@@ -1,6 +1,6 @@
 ---
 name: troop-calendar
-description: Look up what is on the troop's calendar — meetings, campouts, courts of honor, service projects, boards of review, troop elections, summer camp — by reading the troop's published iCal feed. Use whenever someone asks what is coming up, what happened on a date, when the next campout or court of honor is, or wants to plan advancement around the troop schedule.
+description: Look up what is on the troop's calendar by reading the troop's published iCal feed.
 ---
 
 # Troop calendar

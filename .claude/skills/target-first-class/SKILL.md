@@ -1,6 +1,6 @@
 ---
 name: target-first-class
-description: Turn a TroopMaster "Target First Class" report into an advancement plan and to-do list — read the requirement grid, group Scouts by the rank they are working on, find the time-clocked and shared requirements, and schedule the work against the troop calendar. Use whenever someone hands over a Target First Class report, asks who is close to Tenderfoot/Second Class/First Class, asks what to program at meetings or a Saturday at the Shed, or wants to know what stands between the troop and the next court of honor.
+description: Turn a TroopMaster "Target First Class" report into an advancement plan and to-do list.
 ---
 
 # Target First Class

@@ -1,6 +1,6 @@
 ---
 name: guide-to-advancement
-description: Answer questions about how Scouting America (BSA) advancement is administered — boards of review, Eagle Scout procedures, merit badge counseling, appeals, time extensions, alternative requirements, advancement for members with special needs, unit/district/council roles — by quoting the Guide to Advancement 2025 with exact section and page citations. Use whenever someone asks what the rules, policies, or procedures are for advancement, or whether a unit may do something.
+description: Answer questions about how Scouting America (BSA) advancement is administered, based on Guide to Advancement 2025.
 ---
 
 # Guide to Advancement 2025
