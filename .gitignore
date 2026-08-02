@@ -1,2 +1,9 @@
 # Text extraction cache rebuilt from docs/ on demand.
 .claude/skills/*/.cache/
+
+# This repository is public. Nothing naming a Scout may be committed.
+# TroopMaster reports and the plans generated from them stay local.
+plans/
+reports/
+*.pdf
+!docs/*.pdf

@@ -9,9 +9,30 @@ Advancement Chair and Scoutmasters communicate and plan the troop's advancement
 program. The intended output is a set of skills (and any supporting scripts/data)
 that reason over official advancement rules and requirements.
 
+## Privacy — this repository is public
+
+`github.com/karnowski/scout-advancement` is a **public** repository, and most of
+what this project reads is a roster of minors.  Nothing that names a Scout may
+ever be committed.  That covers:
+
+- TroopMaster reports (Target First Class, Target Eagle, Partial Merit Badges
+  List) and any other export naming Scouts.
+- The plans generated from them, in `plans/`.
+- **Commit messages, branch names, and PR descriptions** — summarize a change as
+  "regenerate the Target Eagle plan", never by who is in it.
+
+`.gitignore` covers `plans/`, `reports/`, and every PDF outside `docs/`.  Treat
+that as a backstop, not as permission to stop paying attention: never
+`git add -f` past it, and never paste report contents into a tracked file.  If a
+Scout's name has to appear in something committed — a test fixture, an example
+in a SKILL.md — invent one.
+
+Nothing here restricts what the skills may *say* in a session.  Names belong in
+plans and in answers to the Advancement Chair; they just never reach git.
+
 ## Current state
 
-- `README.md` — one-line statement of purpose.
+- `README.md` — statement of purpose and a catalog of the skills.
 - `docs/` — authoritative reference PDFs (see below).
 - `.claude/skills/guide-to-advancement/` — answers advancement policy and
   procedure questions by quoting the Guide to Advancement 2025 with section and
@@ -25,7 +46,13 @@ that reason over official advancement rules and requirements.
 - `.claude/skills/target-eagle/` — turns a TroopMaster "Target Eagle" report
   plus the matching "Partial Merit Badges List" into an advancement plan and
   to-do list for the Scouts working toward Star, Life, and Eagle.
-- `plans/` — generated advancement plans, dated from the report they read.
+- `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
+  Gitignored; look here first when a skill needs a report and none was named.
+- `plans/` — generated advancement plans, gitignored.  Named
+  `<skill>-YYYY-MM-DD.md`, dated from the report they read, with an optional
+  `-SCOPE` suffix when a run covers a subset rather than the whole report
+  (`target-first-class-2026-08-01-seals.md` is the Seals patrol).  Two runs of
+  the same scope on the same report overwrite; don't invent `-backup` names.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
 - `.rubocop.yml` / `.rubocop_todo.yml` — lint configuration (see below).
