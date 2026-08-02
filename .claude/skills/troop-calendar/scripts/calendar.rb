@@ -158,6 +158,11 @@ module ICS
               end
     stop = zone.local_time(window_end.year, window_end.month, window_end.day)
 
+    # Hand the rule to the gem as its raw ICAL string. That is what keeps UNTIL
+    # correct: `UNTIL=...Z` is a UTC *instant*, not a date. Several series in this
+    # feed end at T045959Z, which is 23:59:59 the previous day in Eastern time, so
+    # normalizing UNTIL to its date part first yields one occurrence too many per
+    # series -- a phantom final meeting, on a date the troop is not meeting.
     times = event.rrule.flat_map do |rule|
       RRule::Rule.new(rule.value_ical, dtstart: dtstart, tzid: zone.identifier)
                  .between(dtstart, stop)

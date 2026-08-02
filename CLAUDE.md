@@ -98,93 +98,42 @@ before anything else, so no `bundle exec` prefix is needed.
 
 ### Skill scripts
 
-`guide-to-advancement/scripts/gta.rb` shells out to `pdftotext` (poppler) to
-build a page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt
-on demand). It resolves the Guide's own section numbers to page locations, so
-answers can cite `8.0.1.1` alongside a printed page. Three extraction facts it
-depends on, all verified against the PDF:
+Each skill is a single script under `.claude/skills/<skill>/scripts/`:
 
-- Printed page + 2 = PDF page. The offset is re-measured from page footers at
-  build time rather than hardcoded.
-- Body headings wrap across lines and come out truncated, so full section titles
-  are read from the front-matter contents listing instead.
-- `pdftotext` is deliberate here and should not be swapped for the `pdf-reader`
-  gem. On *this* PDF, pdf-reader interleaves the two columns line by line and
-  emits headings with no inter-word spaces (`8.0.1.1NotaRetestor`), which makes
-  section titles unrecoverable. pdf-reader is fine on the single-column
-  `docs/Scouts-BSA-Requirements-2025.pdf`.
+- **`gta.rb`** (guide-to-advancement) — shells out to `pdftotext` to build a
+  page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt on
+  demand), and resolves the Guide's own section numbers to printed pages so an
+  answer can cite `8.0.1.1` alongside a page.
+- **`calendar.rb`** (troop-calendar) — fetches the iCal feed over `net/http`,
+  expands recurrence with `rrule`, converts to calendar-local time with
+  `tzinfo`, and caches occurrences in `.cache/calendar.db` via `sqlite3`,
+  re-syncing when the cache is over six hours old.
+- **`tfc.rb`** (target-first-class) — rebuilds a 25-row by 121-column grid of
+  rotated headers and single-glyph marks from `pdftotext -bbox` output.
+- **`te.rb`** (target-eagle) — the same for the Target Eagle grid, plus the
+  Partial Merit Badges List via `pdftotext -layout`.
 
-`troop-calendar/scripts/calendar.rb` fetches the troop's iCal feed over
-`net/http` and caches it as expanded occurrences in `.cache/calendar.db`. It
-re-syncs automatically when the cache is older than six hours. It uses
-`icalendar` to parse the feed, `rrule` to expand recurrence rules, `tzinfo` to
-convert to calendar-local time, and `sqlite3` for the cache. Facts about the
-feed it depends on, all verified against it:
+**Every one of these rests on hard-won facts about its source document** — how
+the PDF extracts, what a given mark means, which cross-check catches a misparse.
+Those facts live next to the code they constrain, not here: in **`SKILL.md`
+under "Facts about the report(s) the script depends on"** for the two TroopMaster
+skills, and in **header and inline comments** in `gta.rb` and `calendar.rb`.
 
-- Times come in three flavors: `VALUE=DATE` all-day, UTC (`...Z`), and
-  `TZID=America/New_York`. Everything stored is calendar-local wall clock, so
-  UTC stamps are converted through `tzinfo` — never through the machine's own
-  timezone.
-- Recurrence is override-heavy: ~130 `RECURRENCE-ID` events move or rename
-  single instances of a series. The gems do not model this, so the script does:
-  an override replaces its master's occurrence on that date; `EXDATE` and
-  `STATUS:CANCELLED` remove it.
-- `RRULE:...;UNTIL=...Z` is a UTC instant, not a date. Several series end at
-  `T045959Z`, which is 23:59:59 the previous day in Eastern time; truncating
-  `UNTIL` to its date part yields one occurrence too many per series.
-- `DTEND` is exclusive for all-day events but inclusive-in-effect for timed
-  ones, so multi-day spans are computed differently for each.
+**Read them before changing a parser.** Each was established by getting it wrong
+first, and none is recoverable by reading the code alone — the code shows what is
+done, not the alternative that was tried and silently produced garbage.
 
-`target-first-class/scripts/tfc.rb` reads a TroopMaster "Target First Class"
-report — a 25-row by 121-column grid of rotated headers and single-glyph marks.
-It shells out to `pdftotext -bbox` and rebuilds the grid from word bounding
-boxes. Facts about the report it depends on, all verified against the 8/1/2026
-one:
+Two rules generalize across all of them:
 
-- **The report checks itself.** It prints a "Scouts Needing:" tally under every
-  column; the script recomputes those counts from the grid it built and compares
-  all 121 before reporting anything. Never trust a parse that fails `verify` —
-  the grid is dense enough that a misalignment looks entirely plausible.
-- `pdftotext -layout` is not an option here, and neither is reading page 1 as an
-  image. The marks sit on a ~5.5pt pitch under rotated headers; layout mode
-  interleaves the columns, and the image is illegible at that density.
-- `X` and `/` both mean complete. `/` is credit that came with a rank award
-  rather than a dated sign-off — every Scout-rank holder carries one on Scout 6b.
-  Treating `/` as incomplete fails the tally cross-check, which is how this was
-  confirmed.
-- Rotated headers drop single-part requirement codes ("Scout 5" extracts as bare
-  "Scout"), so the 121 column names are hardcoded in `RANKS`. The script asserts
-  the count and the per-rank run-lengths (19 / 27 / 37 / 38) and refuses to run
-  on a report that disagrees, rather than guessing.
-
-`target-eagle/scripts/te.rb` reads two reports: the "Target Eagle" grid (via
-`pdftotext -bbox`, same reason as above — `-layout` interleaves the three rank
-blocks) and the "Partial Merit Badges List" (via `pdftotext -layout`, which is
-fine on that one). Facts about them it depends on, all verified against the
-8/1/2026 and 8/2/2026 reports:
-
-- **The Star block's "SM Conf" column is broken.** TroopMaster leaves it blank
-  for every Scout, including Life Scouts whose Star rank is plainly complete. It
-  carries no information, so the script excludes it from every count. The rank
-  printed in parentheses after each name is authoritative.
-- **The cross-check is that printed rank.** This report has no "Scouts Needing:"
-  tally, so `verify` asserts instead that every rank block below a Scout's
-  printed rank is complete. A misaligned grid fails it immediately.
-- **A number means not done.** Participation, Serv Proj, and Lead Pos print the
-  amount *remaining* — days, days, and hours. Only an `X` means complete.
-- `*` is a completed Eagle-required badge and `+` a completed badge in an Eagle
-  category already filled. `+` counts toward the Star and Life "from the required
-  list" totals but only as an elective toward Eagle's 14.
-- **Blank merit badge slots are a reliable count; the asterisks are not.** A
-  Scout with more than seven electives spills the surplus into slots the grid
-  then cannot use to show which required badges remain. Read those from the
-  partials list, not from the grid.
-- Rotated headers are only as tall as the word is long, so "til" and "18" in
-  "Months til 18" fall below any height filter. Long words seed the column
-  positions; the rest of each phrase is collected by position.
-- TroopMaster's badge names differ from the requirements book's ("Citizenship In
-  Community" vs "Citizenship in the Community"), so the script matches names
-  loosely and `clocks` names any rule that matched nothing.
+- **Never trust a parse that fails `verify`.** Both TroopMaster grids are dense
+  enough that a misalignment yields an entirely plausible-looking plan rather
+  than an obvious error. `tfc.rb` checks itself against the report's own "Scouts
+  Needing:" tally; `te.rb`, which has no tally row, asserts instead that every
+  rank block below each Scout's printed rank is complete.
+- **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
+  grids, `-layout` for the partials list, and plain `pdftotext` rather than the
+  `pdf-reader` gem for the Guide. Each is justified where it is used. Do not swap
+  one without re-measuring against the actual PDF.
 
 ## Reference documents (source of truth)
 
