@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ruby -v)",
+      "Bash(gem -v)",
+      "Bash(gem list *)",
+      "Bash(bundle exec *)",
+      "Bash(bundle install *)",
+      "Bash(ruby scripts/gta.rb *)",
+      "Bash(ruby scripts/calendar.rb *)",
+      "Bash(ruby scripts/tfc.rb *)"
+    ]
+  }
+}

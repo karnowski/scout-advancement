@@ -19,6 +19,10 @@ that reason over official advancement rules and requirements.
 - `.claude/skills/troop-calendar/` — answers "what's on the schedule" questions
   from the troop's published iCal feed, and connects dates to advancement
   planning.
+- `.claude/skills/target-first-class/` — turns a TroopMaster "Target First
+  Class" report into an advancement plan and to-do list for the Scouts working
+  toward Scout through First Class.
+- `plans/` — generated advancement plans, dated from the report they read.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
 - `.rubocop.yml` / `.rubocop_todo.yml` — lint configuration (see below).
@@ -96,6 +100,28 @@ feed it depends on, all verified against it:
 - `DTEND` is exclusive for all-day events but inclusive-in-effect for timed
   ones, so multi-day spans are computed differently for each.
 
+`target-first-class/scripts/tfc.rb` reads a TroopMaster "Target First Class"
+report — a 25-row by 121-column grid of rotated headers and single-glyph marks.
+It shells out to `pdftotext -bbox` and rebuilds the grid from word bounding
+boxes. Facts about the report it depends on, all verified against the 8/1/2026
+one:
+
+- **The report checks itself.** It prints a "Scouts Needing:" tally under every
+  column; the script recomputes those counts from the grid it built and compares
+  all 121 before reporting anything. Never trust a parse that fails `verify` —
+  the grid is dense enough that a misalignment looks entirely plausible.
+- `pdftotext -layout` is not an option here, and neither is reading page 1 as an
+  image. The marks sit on a ~5.5pt pitch under rotated headers; layout mode
+  interleaves the columns, and the image is illegible at that density.
+- `X` and `/` both mean complete. `/` is credit that came with a rank award
+  rather than a dated sign-off — every Scout-rank holder carries one on Scout 6b.
+  Treating `/` as incomplete fails the tally cross-check, which is how this was
+  confirmed.
+- Rotated headers drop single-part requirement codes ("Scout 5" extracts as bare
+  "Scout"), so the 121 column names are hardcoded in `RANKS`. The script asserts
+  the count and the per-rank run-lengths (19 / 27 / 37 / 38) and refuses to run
+  on a report that disagrees, rather than guessing.
+
 ## Reference documents (source of truth)
 
 Advancement logic must trace back to these official documents in `docs/`; do not
@@ -139,6 +165,33 @@ Troop 400 is a Scouting America troop in Durham, North Carolina.  The troop's of
 | Skeletons | Early 2025 | big patrol split into Brotherhood & BioHazards |
 
 Additionally, the "Bald Eagles" is the adult scoutmaster patrol.  Note, this patrol name is infrequently used, but when it is, it is always fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named (and more commonly mentioned) youth patrol.
+
+### How the troop runs advancement
+
+These apply to any advancement planning — rank or merit badge, Target First
+Class or Target Eagle:
+
+- **Abbreviations** — the troop uses "SMC" for Scoutmaster Conference and "BoR"
+  for Board of Review.
+- **Scoutmaster conferences and boards of review are never scheduled as separate
+  events.** They happen inside regular meetings, so they never appear on the
+  calendar feed. Do not report their absence from it as a finding or a gap.
+- **Plan up to 3 conferences or 3 boards per meeting.** The real constraint is
+  meeting-night capacity. Total the load, check it fits the meeting nights
+  available, and spread it — batching it before a court of honor does not work.
+  Conferences and boards can run concurrently.
+- **Committee members are almost always also Assistant Scoutmasters.** They can sign
+  off merit badge requirements, and they can run boards of review.  Only the
+  Scoutmaster can run a Scoutmaster conference.
+- **Collapse the closing three requirements** — Scout Spirit, Scoutmaster
+  conference, and board of review — into one line, "needs an SMC/BoR meeting".
+  At Scout rank, which has no board of review, it is "needs an SMC meeting".
+- **"Saturday at the Shed" is an intensive sign-off and training session,** not a
+  work day: roughly 3–4 hours with 6–7 adult leaders signing off. Split the
+  leader roster between Target First Class rank sign-offs and Target Eagle merit
+  badge sign-offs, plan ~3 rotating stations, and expect it to absorb about 3
+  conferences and 3 boards as well. Check how many fall in the planning window —
+  there may be only one.
 
 ## Technology Preferences
 
