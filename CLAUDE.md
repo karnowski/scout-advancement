@@ -138,8 +138,8 @@ Troop 400's current patrol are (as of 2026-08-01):
   - most are age 11-12
 
 Previous patrols (now retired) include:
-- The Flamingos (retired summer 2026; most aged out, some moved to Brotherhood & BioHazards)
-- The Skeletons (big patrol split into Brotherhood & BioHazards)
+- Flamingos (retired summer 2026; most aged out, some moved to Brotherhood & BioHazards)
+- Skeletons (big patrol split into Brotherhood & BioHazards)
 
 Additionally, the "Bald Eagles" are the adult scoutmaster patrol.  However, this patrol name is infrequently used, but when it is, it is fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named youth patrol.
 
