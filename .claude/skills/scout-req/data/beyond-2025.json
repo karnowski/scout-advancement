@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Merit badges that docs/Scouts-BSA-Requirements-2025.pdf cannot answer for,",
+    "because they were introduced, renamed, revised, or discontinued after that",
+    "book went to print. req.rb consults this list on every `show` and exits 3",
+    "with a banner when it hits one.",
+    "",
+    "A badge does NOT need an entry here for req.rb to be loud about it: any name",
+    "the 2025 book does not contain already triggers the banner. This file is for",
+    "the case the book cannot detect on its own -- a badge that IS in the 2025",
+    "book but whose requirements changed afterward. Nothing local can reveal that,",
+    "so it has to be recorded by hand.",
+    "",
+    "Fields, all optional except name and status:",
+    "  name         the badge's current official name",
+    "  status       new | revised | renamed | discontinued",
+    "  effective    the year the change takes effect, e.g. \"2026\"",
+    "  renamed_from the previous name, so the old name triggers the banner too",
+    "  note         one line the Advancement Chair needs to act on",
+    "  source       where the requirements actually live",
+    "",
+    "Deliberately empty. Requirements change yearly and this repository's rule is",
+    "that advancement logic traces back to a document, never to recollection --",
+    "so entries go in only when someone has checked scouting.org/meritbadges."
+  ],
+  "badges": []
+}

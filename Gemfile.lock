@@ -53,6 +53,7 @@ GEM
     racc (1.8.1)
     rainbow (3.1.1)
     regexp_parser (2.12.0)
+    rexml (3.4.4)
     rrule (0.8.0)
       activesupport (>= 2.3)
     rubocop (1.88.2)
@@ -106,6 +107,7 @@ PLATFORMS
 DEPENDENCIES
   icalendar (~> 2.12)
   pdf-reader (~> 2.15)
+  rexml (~> 3.4)
   rrule (~> 0.8)
   rubocop (~> 1.88)
   sqlite3 (~> 2.9)

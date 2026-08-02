@@ -10,6 +10,11 @@ gem "sqlite3", "~> 2.9"
 # that PDF's two columns and drops the spaces inside its headings.
 gem "pdf-reader", "~> 2.15"
 
+# Read the font sizes and glyph positions in `pdftohtml -xml` output — how
+# scout-req finds every heading in the requirements book. A bundled gem since
+# Ruby 3.0, so it must be declared to survive `bundler/setup`.
+gem "rexml", "~> 3.4"
+
 # Parse the troop's iCal feed, expand its recurrence rules, and convert the
 # feed's UTC stamps to calendar-local time.
 gem "icalendar", "~> 2.12"

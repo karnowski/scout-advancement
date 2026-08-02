@@ -12,7 +12,11 @@
       "Bash(pdftotext -layout docs/Scouts-BSA-Requirements-2025.pdf -)",
       "Bash(pdftotext *)",
       "Bash(ruby scripts/te.rb *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(pdfinfo docs/Scouts-BSA-Requirements-2025.pdf)",
+      "Bash(pdftohtml *)",
+      "Bash(ruby scripts/req.rb *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

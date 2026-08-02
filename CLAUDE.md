@@ -37,6 +37,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/guide-to-advancement/` — answers advancement policy and
   procedure questions by quoting the Guide to Advancement 2025 with section and
   printed-page citations.
+- `.claude/skills/scout-req/` — looks up rank, merit badge, and award
+  requirement text in Scouts BSA Requirements 2025, and is deliberately loud
+  about any merit badge that printing cannot answer for.
 - `.claude/skills/troop-calendar/` — answers "what's on the schedule" questions
   from the troop's published iCal feed, and connects dates to advancement
   planning.
@@ -81,8 +84,9 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Three of the four skills also need **`pdftotext`**, from poppler — it is not a
-gem, so `bundle install` alone leaves a fresh clone unable to run them:
+Four of the five skills also need **`pdftotext`**, and `scout-req` additionally
+needs **`pdftohtml`**. Both come from poppler, and neither is a gem, so
+`bundle install` alone leaves a fresh clone unable to run them:
 
     brew install poppler
 
@@ -112,12 +116,20 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
   rotated headers and single-glyph marks from `pdftotext -bbox` output.
 - **`te.rb`** (target-eagle) — the same for the Target Eagle grid, plus the
   Partial Merit Badges List via `pdftotext -layout`.
+- **`req.rb`** (scout-req) — indexes every rank, merit badge, and award in the
+  requirements book by reading font sizes out of `pdftohtml -xml`, since the book
+  numbers nothing and its headings are otherwise indistinguishable from body
+  text. Body text comes from plain `pdftotext`. Exits `3` — not `1` — when a
+  question needs requirements the 2025 printing does not carry; that status is
+  the skill's whole reason for existing, so preserve it.
 
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the report(s) the script depends on"** for the two TroopMaster
-skills, and in **header and inline comments** in `gta.rb` and `calendar.rb`.
+under "Facts about the report(s)/book the script depends on"** for the two
+TroopMaster skills and `scout-req`, and in **header and inline comments** in
+`gta.rb` and `calendar.rb`. `req.rb` carries a second copy in its own header,
+next to the code the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
@@ -129,11 +141,14 @@ Two rules generalize across all of them:
   enough that a misalignment yields an entirely plausible-looking plan rather
   than an obvious error. `tfc.rb` checks itself against the report's own "Scouts
   Needing:" tally; `te.rb`, which has no tally row, asserts instead that every
-  rank block below each Scout's printed rank is complete.
+  rank block below each Scout's printed rank is complete. `req.rb` reconciles
+  its merit badge index against the requirements book's own Merit Badge Library
+  page, and checks the badges run alphabetically under the right A–Z tab.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
-  grids, `-layout` for the partials list, and plain `pdftotext` rather than the
-  `pdf-reader` gem for the Guide. Each is justified where it is used. Do not swap
-  one without re-measuring against the actual PDF.
+  grids, `-layout` for the partials list, plain `pdftotext` rather than the
+  `pdf-reader` gem for the Guide, and `pdftohtml -xml` alongside plain
+  `pdftotext` for the requirements book. Each is justified where it is used. Do
+  not swap one without re-measuring against the actual PDF.
 
 ## Reference documents (source of truth)
 

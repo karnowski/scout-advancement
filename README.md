@@ -24,6 +24,26 @@ p. 55*).  It also preserves the Guide's distinction between **must** (mandated),
 the question.  When the Guide doesn't cover something, the skill says so and
 points to the local district or council advancement chair rather than guessing.
 
+### `scout-req`
+
+Looks up the official text of a rank, merit badge, or award requirement in
+_Scouts BSA Requirements 2025_ (`docs/Scouts-BSA-Requirements-2025.pdf`) — *what*
+a Scout must do, as distinct from the `guide-to-advancement` skill's *how* it is
+administered.  It indexes all 9 ranks, 139 merit badges, and 26 awards, searches
+requirement text, and quotes it verbatim with the printed page and the year.
+
+Because the answer is only as good as the printing it came from, the skill is
+built to be **loud about anything the 2025 book cannot answer**.  A merit badge
+introduced, renamed, or revised after that printing gets a full-width banner and
+a distinct exit status rather than a fluent, well-cited, wrong answer — which is
+the only other thing that could happen, and is invisible once it reaches a Scout.
+Badges the book has never heard of are caught automatically; badges that are in
+the book but changed later are recorded by hand in
+`.claude/skills/scout-req/data/beyond-2025.json`.
+
+The parse checks itself against the book's own Merit Badge Library index before
+anything is quoted.
+
 ### `troop-calendar`
 
 Answers questions about the troop schedule — what's coming up, when the next
