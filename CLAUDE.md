@@ -121,25 +121,22 @@ ranges rather than loading them whole.
 
 Troop 400 is a BSA troop in Durham, North Carolina. The troop's official calendar feed is linked in `README.md`.
 
-Troop 400's current patrol are (as of 2026-08-01):
-- BioHazards
-  - often shortened to the "Hazards"
-  - most are age 14-15, but a few are older
-- Brotherhood of the Flame
-  - often shortened to the "Brotherhood"
-  - most are age 14-15, but a few are older
-- Screamin' Eagles
-  - often shortened to the "Eagles"
-  - all are age 13
-- Seals
-  - most are age 12-13
-- Patriotic Squirrels
-  - often shortened to the "Squirrels"
-  - most are age 11-12
+Current patrols are (as of 2026-08-01):
 
-Previous patrols (now retired) include:
-- Flamingos (retired summer 2026; most aged out, some moved to Brotherhood & BioHazards)
-- Skeletons (big patrol split into Brotherhood & BioHazards)
+| Patrol | Nickname | Notes |
+| :----- | :------- | :---- |
+| BioHazards | Hazards | most are age 14-15, but a few are older |
+| Brotherhood of the Flame | Brotherhood | most are age 14-15, but a few are older |
+| Screamin' Eagles | Eagles | all are age 13 |
+| Seals | _(none)_ | most are age 12-13 |
+| Patriotic Squirrels | Squirrels | most are age 11-12 |
+
+Previous patrols include:
+
+| Patrol | Retired | Notes |
+| :----- | :------ | :---- |
+| Flamingos | Summer 2026 | most aged out, some moved to Brotherhood & BioHazards |
+| Skeletons | Early 2025 | big patrol split into Brotherhood & BioHazards |
 
 Additionally, the "Bald Eagles" are the adult scoutmaster patrol.  However, this patrol name is infrequently used, but when it is, it is fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named youth patrol.
 
