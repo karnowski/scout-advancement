@@ -11,7 +11,8 @@
       "Bash(ruby scripts/tfc.rb *)",
       "Bash(pdftotext -layout docs/Scouts-BSA-Requirements-2025.pdf -)",
       "Bash(pdftotext *)",
-      "Bash(ruby scripts/te.rb *)"
+      "Bash(ruby scripts/te.rb *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }
