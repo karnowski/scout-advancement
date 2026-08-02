@@ -50,3 +50,23 @@ real dates from `troop-calendar`, policy and citations from
 
 Plans are written to `plans/target-first-class-YYYY-MM-DD.md`, dated from the
 report they read.
+
+### `target-eagle`
+
+Turns a TroopMaster **Target Eagle** report — the Scouts working toward Star,
+Life, and Eagle — into an advancement plan and a set of to-do lists.  It reads
+*two* reports together: the Target Eagle grid, which says how much active time,
+service, and how many merit badge slots are left, and the matching **Partial
+Merit Badges List**, which says *which* badges are in progress and exactly which
+requirements are open.  The grid alone will tell you a Scout needs three more
+merit badges; only the partials list tells you two of them are 98% done.
+
+For this cohort the binding constraint is rarely meeting-night capacity.  It is
+merit badges, service hours, the Eagle project, and the 18th birthday — so the
+skill leads with who is running out of time, which requirements carry a
+multi-week clock (Personal Management's 13-week budget, Personal Fitness's
+12-week program, Camping's 20 nights), and which Scouts are one meeting away
+from a rank that has to be awarded before the next rank's clocks can start.
+
+Plans are written to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report
+they read.

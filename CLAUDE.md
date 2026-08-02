@@ -22,6 +22,9 @@ that reason over official advancement rules and requirements.
 - `.claude/skills/target-first-class/` — turns a TroopMaster "Target First
   Class" report into an advancement plan and to-do list for the Scouts working
   toward Scout through First Class.
+- `.claude/skills/target-eagle/` — turns a TroopMaster "Target Eagle" report
+  plus the matching "Partial Merit Badges List" into an advancement plan and
+  to-do list for the Scouts working toward Star, Life, and Eagle.
 - `plans/` — generated advancement plans, dated from the report they read.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
@@ -121,6 +124,35 @@ one:
   "Scout"), so the 121 column names are hardcoded in `RANKS`. The script asserts
   the count and the per-rank run-lengths (19 / 27 / 37 / 38) and refuses to run
   on a report that disagrees, rather than guessing.
+
+`target-eagle/scripts/te.rb` reads two reports: the "Target Eagle" grid (via
+`pdftotext -bbox`, same reason as above — `-layout` interleaves the three rank
+blocks) and the "Partial Merit Badges List" (via `pdftotext -layout`, which is
+fine on that one). Facts about them it depends on, all verified against the
+8/1/2026 and 8/2/2026 reports:
+
+- **The Star block's "SM Conf" column is broken.** TroopMaster leaves it blank
+  for every Scout, including Life Scouts whose Star rank is plainly complete. It
+  carries no information, so the script excludes it from every count. The rank
+  printed in parentheses after each name is authoritative.
+- **The cross-check is that printed rank.** This report has no "Scouts Needing:"
+  tally, so `verify` asserts instead that every rank block below a Scout's
+  printed rank is complete. A misaligned grid fails it immediately.
+- **A number means not done.** Participation, Serv Proj, and Lead Pos print the
+  amount *remaining* — days, days, and hours. Only an `X` means complete.
+- `*` is a completed Eagle-required badge and `+` a completed badge in an Eagle
+  category already filled. `+` counts toward the Star and Life "from the required
+  list" totals but only as an elective toward Eagle's 14.
+- **Blank merit badge slots are a reliable count; the asterisks are not.** A
+  Scout with more than seven electives spills the surplus into slots the grid
+  then cannot use to show which required badges remain. Read those from the
+  partials list, not from the grid.
+- Rotated headers are only as tall as the word is long, so "til" and "18" in
+  "Months til 18" fall below any height filter. Long words seed the column
+  positions; the rest of each phrase is collected by position.
+- TroopMaster's badge names differ from the requirements book's ("Citizenship In
+  Community" vs "Citizenship in the Community"), so the script matches names
+  loosely and `clocks` names any rule that matched nothing.
 
 ## Reference documents (source of truth)
 

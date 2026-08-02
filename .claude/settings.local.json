@@ -9,7 +9,9 @@
       "Bash(ruby scripts/gta.rb *)",
       "Bash(ruby scripts/calendar.rb *)",
       "Bash(ruby scripts/tfc.rb *)",
-      "Bash(pdftotext -layout docs/Scouts-BSA-Requirements-2025.pdf -)"
+      "Bash(pdftotext -layout docs/Scouts-BSA-Requirements-2025.pdf -)",
+      "Bash(pdftotext *)",
+      "Bash(ruby scripts/te.rb *)"
     ]
   }
 }
