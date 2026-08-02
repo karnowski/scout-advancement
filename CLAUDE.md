@@ -81,6 +81,11 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
+Three of the four skills also need **`pdftotext`**, from poppler — it is not a
+gem, so `bundle install` alone leaves a fresh clone unable to run them:
+
+    brew install poppler
+
 Prefer a well-maintained gem over hand-rolling a parser for a standard format —
 iCalendar, RRULE, and PDF text extraction are all specified formats with edge
 cases that are easy to get subtly wrong. Keep the dependency list short and
