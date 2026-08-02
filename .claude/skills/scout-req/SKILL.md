@@ -19,7 +19,10 @@ This book is *what* a Scout must do. For *how* advancement is administered —
 boards of review, counselor approval, appeals, extensions — the source is the
 Guide to Advancement, and the `guide-to-advancement` skill answers from it.
 Questions about a specific Scout's progress belong to `target-first-class` or
-`target-eagle`; this skill is the requirement text those plans cite.
+`target-eagle`; this skill is the requirement text those plans cite, and they
+call it rather than reading the book themselves.  Scripts live in sibling
+directories, so they reach each other by relative path —
+`ruby ../scout-req/scripts/req.rb show NAME` from any skill directory.
 
 ## Tool
 
@@ -30,6 +33,7 @@ cache automatically on first use (needs `pdftotext` and `pdftohtml`;
 ```
 ruby scripts/req.rb verify                            # parse check — run this first
 ruby scripts/req.rb show NAME [--kind rank|badge|award]
+ruby scripts/req.rb check [NAME...] [--kind K]        # or names on stdin, one per line
 ruby scripts/req.rb list [--kind K] [--letter A] [--pamphlet-year YYYY]
 ruby scripts/req.rb search PATTERN [--kind K] [--context N] [--max N]
 ruby scripts/req.rb page PRINTED_PAGE [--to PRINTED_PAGE]
@@ -41,6 +45,10 @@ ruby scripts/req.rb build [--force]
   ampersands, and "and"/"the" are all folded, so `first-class`, `First Class`,
   and `FIRST CLASS` are the same query. It prints the entry's full requirement
   text with the printed page it came from.
+- `check` is `show`'s guard without the text: it prints **nothing** for a name
+  this book covers cleanly, a banner for one it does not, and exits 3 if any
+  name was flagged. It takes many names at once — as arguments or one per line
+  on stdin — which is what makes checking a whole TroopMaster report affordable.
 - `list` is the index: 9 ranks, 139 merit badges, 26 awards.
 - `search` is a case-insensitive regex over requirement text, and reports which
   entry each hit falls in — the way to answer "which badges require a swim
@@ -58,15 +66,16 @@ badge that changed in 2026 does months of the wrong work, and nothing about the
 answer looks wrong — it is fluent, specific, and cited. There is no way to catch
 it downstream, so it has to be caught here.
 
-**`show` exits `3` and prints a full-width banner when the answer would need
-requirements this book does not carry.** That happens three ways:
+**`show` and `check` exit `3` and print a full-width banner when the answer
+would need requirements this book does not carry.** That happens three ways:
 
 1. **The name is not in the book at all** — a merit badge introduced or renamed
    after the 2025 printing, or a typo. The banner lists the closest names in the
    book so you can tell the two apart.
 2. **The name is recorded in `data/beyond-2025.json`** as new since 2025.
 3. **The badge is in the book but that file records it as revised since 2025** —
-   the 2025 text is still printed, under a `SUPERSEDED` banner.
+   `show` still prints the 2025 text, under a `SUPERSEDED` banner; `check`
+   prints the banner alone.
 
 **When you get exit 3, stop and announce it.** Lead your answer with it; do not
 bury it under the requirement text or a summary. Say plainly that this skill
@@ -76,8 +85,14 @@ offer the 2025 text of a superseded badge as "close enough", and do **not** let
 a plan, to-do list, or Scout assignment be built on it.
 
 Run every badge name you get from somewhere else — a TroopMaster report, the
-Advancement Chair, a Scout — through `show` before planning around it. That is
-how a 2026 badge actually reaches this skill, and the check costs nothing.
+Advancement Chair, a Scout — through `check` before planning around it. That is
+how a 2026 badge actually reaches this skill, and `check` is silent unless
+something is wrong, so the whole list costs one call:
+
+```
+ruby ../target-eagle/scripts/te.rb badges REPORT.pdf --partials PARTIALS.pdf \
+  | ruby scripts/req.rb check
+```
 
 ### Keeping `data/beyond-2025.json` current
 
@@ -86,23 +101,26 @@ needs the file is the one nothing local can reveal: **a badge that is in the
 2025 book but whose requirements changed afterward.** Recording it there turns a
 silently-wrong answer into a loud one.
 
-The file ships empty on purpose — entries go in only when someone has checked
-`www.scouting.org/meritbadges`, never from recollection. Its header documents
-the fields. If the Advancement Chair tells you a badge has changed, offer to add
-it; cite where the change was confirmed in the `source` field.
+Entries go in only when someone has checked `www.scouting.org/meritbadges`,
+never from recollection — the file shipped empty for that reason, and it holds
+only what has been confirmed there since.  Its header documents the fields.  If
+the Advancement Chair tells you a badge has changed, offer to add it; cite where
+the change was confirmed in the `source` field.
 
 ## Workflow
 
 1. **`verify` first** if you have not run it this session, and never quote from
    a parse that fails it (see below).
-2. **Find the entry.** `show NAME` for a specific rank, badge, or award; `list`
+2. **`check` any names that came from a report or a person** before you look
+   anything up.  One call, silent unless something is wrong.
+3. **Find the entry.** `show NAME` for a specific rank, badge, or award; `list`
    to see what exists; `search` when the question is about a phrase rather than
    an entry ("which badges need a counselor-approved project?").
-3. **Read the whole entry, not one requirement.** Requirements reference each
+4. **Read the whole entry, not one requirement.** Requirements reference each
    other constantly — First Class 6a needs the swimmer test defined in Swimming,
    Second Class 7a starts only after Tenderfoot 6c. A requirement quoted out of
    its entry loses the conditions on it.
-4. **Answer, quoting verbatim and citing the printed page and the year.**
+5. **Answer, quoting verbatim and citing the printed page and the year.**
 
 ## Answering
 

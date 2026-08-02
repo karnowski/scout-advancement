@@ -33,7 +33,9 @@ require "tempfile"
 # The rotated headers lose their requirement code for single-part numbers
 # ("Scout 5" comes out as bare "Scout"), so the codes are named here and the
 # parser asserts that the column count and the rank run-lengths still match.
-# Labels are the report's own legend, printed on pages 1-2.
+# Labels are the report's own legend, printed on pages 1-2 -- they identify a
+# column, they are not the requirement. The text that governs comes from the
+# `scout-req` skill; never quote one of these into a plan.
 # --------------------------------------------------------------------------
 RANKS = [
   {

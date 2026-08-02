@@ -14,6 +14,7 @@
 # foot of the page) and the PDF page number, because they differ by two.
 #
 #   ruby scripts/req.rb show NAME [--kind rank|badge|award]
+#   ruby scripts/req.rb check [NAME...] [--kind K]      (or names on stdin)
 #   ruby scripts/req.rb list [--kind K] [--letter A] [--pamphlet-year YYYY]
 #   ruby scripts/req.rb search PATTERN [--kind K] [--context N] [--max N]
 #   ruby scripts/req.rb page PRINTED_PAGE [--to PRINTED_PAGE]
@@ -511,14 +512,18 @@ def announce_unknown(query, suggestions, beyond_entry)
   banner("NOT IN THE #{BOOK_YEAR} REQUIREMENTS BOOK", lines + [""] + FETCH_INSTRUCTION)
 end
 
-def announce_superseded(entry, beyond)
-  banner("SUPERSEDED -- REVISED AFTER #{BOOK_YEAR}",
-         describe_beyond(beyond) + [
-           "",
-           "The #{BOOK_YEAR} text below is printed for reference only. Do not plan a",
-           "Scout's work from it without checking www.scouting.org/meritbadges.",
-           "(#{entry[:name]}, printed p.#{entry[:printed_page]})"
-         ])
+def announce_superseded(entry, beyond, body_follows: true)
+  tail =
+    if body_follows
+      ["The #{BOOK_YEAR} text below is printed for reference only. Do not plan a",
+       "Scout's work from it without checking www.scouting.org/meritbadges.",
+       "(#{entry[:name]}, printed p.#{entry[:printed_page]})"]
+    else
+      ["This book still prints the badge on p.#{entry[:printed_page]}, but that text is",
+       "superseded. Do not plan a Scout's work from it; get the current",
+       "requirements from www.scouting.org/meritbadges."]
+    end
+  banner("SUPERSEDED -- REVISED AFTER #{BOOK_YEAR}", describe_beyond(beyond) + [""] + tail)
 end
 
 # --------------------------------------------------------------------------
@@ -640,6 +645,64 @@ def cmd_show(argv)
   announce_superseded(entry, beyond) if beyond
   print_entry(pages, data, data[:entries].index(entry))
   exit NEED_NEWER if beyond
+end
+
+# --------------------------------------------------------------------------
+# check
+#
+# `show` guards one name at a time, which is the wrong shape for the caller that
+# needs guarding most. target-eagle reads merit badge names out of a TroopMaster
+# partials list -- forty-odd of them, none of which the report has any way to
+# date -- and that is the path a 2026 badge actually travels to reach a Scout.
+# Forty `show` calls printing forty full entries is a check nobody runs twice,
+# so this one prints nothing at all for a name the book covers cleanly. The only
+# output is the problem, and the exit status is still 3.
+
+def check_names(argv)
+  named = argv.reject { |a| a.start_with?("-") }
+  named = $stdin.read.lines unless !named.empty? || $stdin.tty?
+  named.map(&:strip).reject(&:empty?).uniq
+end
+
+# True when this name is one the book cannot answer for.
+def flagged?(data, beyond, name, kind:)
+  entry = beyond_entry(beyond, name)
+  matches = resolve(data, name, kind: kind)
+
+  if matches.empty?
+    announce_unknown(name, suggest(data, name), entry)
+    return true
+  end
+
+  if matches.size > 1
+    puts "note: \"#{name}\" matches #{matches.size} entries " \
+         "(#{matches.map { |e| e[:name] }.join(', ')}) — not checked."
+    return false
+  end
+
+  return false unless entry
+
+  announce_superseded(matches.first, entry, body_follows: false)
+  true
+end
+
+def cmd_check(argv)
+  kind = nil
+  parser = OptionParser.new do |o|
+    o.banner = "usage: req.rb check [NAME...] [--kind rank|badge|award]  (or names on stdin)"
+    o.on("--kind K", "restrict to one kind of entry") { |v| kind = parse_kind(v) }
+  end
+  parser.parse!(argv)
+  names = check_names(argv)
+  die parser.banner if names.empty?
+
+  _, data = load_book
+  beyond = load_beyond
+  flagged = names.count { |name| flagged?(data, beyond, name, kind: kind) }
+
+  puts "#{names.size} #{names.size == 1 ? 'name' : 'names'} checked, " \
+       "#{flagged} not in the #{BOOK_YEAR} book."
+  exit NEED_NEWER if flagged.positive?
 end
 
 def cmd_list(argv)
@@ -881,6 +944,7 @@ USAGE = <<~TEXT.freeze
   usage: req.rb COMMAND [options]
 
     show NAME [--kind K]                  print one rank, merit badge, or award
+    check [NAME...]                       flag names this book cannot answer for
     list [--kind K] [--letter A]          list entries (--pamphlet-year YYYY too)
     search PATTERN [--kind K]             regex search of requirement text
     page PRINTED_PAGE [--to N]            print printed page(s)
@@ -894,6 +958,7 @@ TEXT
 argv = ARGV.dup
 case argv.shift
 when "show" then cmd_show(argv)
+when "check" then cmd_check(argv)
 when "list" then cmd_list(argv)
 when "search" then cmd_search(argv)
 when "page" then cmd_page(argv)

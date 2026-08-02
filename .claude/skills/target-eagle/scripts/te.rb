@@ -41,6 +41,9 @@ require "tempfile"
 #
 # Slot counts trace to Scouts BSA Requirements 2025: Star req. 3 is six merit
 # badges, Life req. 3 is five more (11 total), Eagle req. 3 is ten more (21).
+# The `active`/`service`/`position` strings here are labels for a column, not
+# requirement text -- the wording that governs is whatever `scout-req` prints
+# for that rank. Do not quote these into a plan.
 # --------------------------------------------------------------------------
 BLOCKS = [
   {
@@ -105,9 +108,13 @@ HEADER_BAND   = 70.0    # how far above the header baseline a wrapped header may
 # --------------------------------------------------------------------------
 # merit badge requirements that cannot be compressed
 #
-# Every entry verified against docs/Scouts-BSA-Requirements-2025.pdf. Keyed by
-# the requirement's leading number, because TroopMaster prints open requirements
-# in compressed form ("2cd", "9b1") and only the number is reliably parseable.
+# Keyed by the requirement's leading number, because TroopMaster prints open
+# requirements in compressed form ("2cd", "9b1") and only the number is reliably
+# parseable. This table exists to *find* the Scouts on a clock; it is not a copy
+# of the book. The `span` and `note` are enough to flag a badge, never enough to
+# plan from -- the requirement text comes from the `scout-req` skill, which is
+# also the only thing that knows whether the badge changed after the 2025
+# printing. Run `badges` through `req.rb check` before trusting any of this.
 # --------------------------------------------------------------------------
 CLOCKS = [
   { badge: "Personal Management", reqs: %w[2], span: "13 consecutive weeks",
@@ -129,7 +136,8 @@ CLOCKS = [
 ].freeze
 
 # Badges whose requirement 1 is another badge. Finishing the prerequisite closes
-# the dependent requirement outright.
+# the dependent requirement outright. Match keys again, not requirement text:
+# confirm the dependency in `scout-req` before writing it into a plan.
 BADGE_PREREQS = {
   "Emergency Preparedness" => { req: "1", needs: "First Aid" }
 }.freeze
@@ -138,6 +146,8 @@ BADGE_PREREQS = {
 # "Citizenship in the Community", so badge names are compared loosely: case and
 # the articles/prepositions that differ between the two are dropped. Comparing
 # the printed strings directly makes a table entry silently match nothing.
+# `req.rb check` folds the same differences, which is why a TroopMaster name can
+# be piped straight into it.
 BADGE_NOISE = /\b(the|of|and)\b/
 
 def badge_key(name) = name.downcase.gsub(BADGE_NOISE, "").gsub(/[^a-z0-9]+/, " ").strip
@@ -640,6 +650,14 @@ module Render
     puts "\n  * = Eagle-required." if rows.any? { |(_, _, eagle), _| eagle }
   end
 
+  # Every distinct badge name in the partials list, exactly as TroopMaster spells
+  # it, one per line and nothing else — this exists to be piped into
+  # `../scout-req/scripts/req.rb check`, which is the only thing in this repo
+  # that can tell a 2026 merit badge from a 2025 one.
+  def badge_names(_report, partials)
+    puts partials.map(&:badge).uniq.sort
+  end
+
   def clocks(_report, partials)
     puts "\n== Requirements with a calendar clock =="
     quiet = CLOCKS.reject { |clock| report_clock?(clock, partials) }
@@ -649,8 +667,8 @@ module Render
       puts "\n  No Scout is currently open on: " \
            "#{quiet.map { |c| "#{c[:badge]} (reqs. #{c[:reqs].join('/')})" }.join('; ')}."
     end
-    puts "  Re-read the requirement text before planning around any of these; " \
-         "requirements are year-versioned."
+    puts "  Pull the requirement text from the scout-req skill before planning around " \
+         "any of these;\n  requirements are year-versioned and the spans above are only keys."
   end
 
   # Returns false when no Scout has this clock open, so the caller can say so.
@@ -719,12 +737,15 @@ USAGE = <<~TEXT
     verify   REPORT.pdf                     cross-check the parse against each Scout's printed rank
     summary  REPORT.pdf                     cohorts, what is left per Scout, SMC/BoR load
     gaps     REPORT.pdf [--scout NAME]      what each Scout still needs for their next rank
+    badges   REPORT.pdf --partials P.pdf    badge names in progress, one per line
     partials REPORT.pdf --partials P.pdf    merit badges in progress, closest first
     batch    REPORT.pdf --partials P.pdf    open requirements several Scouts share [--min N]
     clocks   REPORT.pdf --partials P.pdf    requirements with a multi-week clock attached
     json     REPORT.pdf [--partials P.pdf]  the whole parse, for further analysis
 
   --partials takes the matching TroopMaster "Partial Merit Badges List" PDF.
+  `badges` is meant to be piped, and exit 3 there means stop and read the banner:
+      ruby scripts/te.rb badges R.pdf --partials P.pdf | ruby ../scout-req/scripts/req.rb check
   --min-pct N limits `partials` and `batch` to badges at or above N percent complete.
   A Scout at 0% on a badge contributes every one of its requirements to `batch`;
   --min-pct 1 drops the not-yet-started ones.
@@ -741,7 +762,7 @@ abort USAGE if command.nil? || path.nil? || path.start_with?("--")
 
 partials_path = flag("--partials")
 abort "#{command}: --partials PARTIALS.pdf is required" if
-  %w[partials batch clocks].include?(command) && partials_path.nil?
+  %w[badges partials batch clocks].include?(command) && partials_path.nil?
 
 begin
   report   = Report.new(path)
@@ -754,6 +775,7 @@ case command
 when "verify"   then Render.verify!(report)
 when "summary"  then Render.summary(report, partials)
 when "gaps"     then Render.gaps(report, only: flag("--scout"))
+when "badges"   then Render.badge_names(report, partials)
 when "partials"
   Render.partials_report(report, partials, only: flag("--scout"),
                                            min_pct: flag("--min-pct", "0").to_i)

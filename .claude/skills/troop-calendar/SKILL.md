@@ -87,11 +87,11 @@ the activity met the requirement's terms, or whether it was approved.  Say
 "Fall Camporee is two nights, which would count toward the Camping merit
 badge's 20 nights for Scouts who attend," not "this gets them to 20 nights."
 
-For what a requirement actually demands, use `docs/Scouts-BSA-Requirements-2025.pdf`.
-For how advancement is administered — board of review procedure, tenure rules,
-what counts as a position of responsibility — use the **guide-to-advancement**
-skill.  This skill supplies dates; those supply the rules.  When a question needs
-both, get the date here and the rule there, and cite each.
+For what a requirement actually demands, use the **scout-req** skill.  For how
+advancement is administered — board of review procedure, tenure rules, what
+counts as a position of responsibility — use the **guide-to-advancement** skill.
+This skill supplies dates; those supply the rules.  When a question needs both,
+get the date here and the rule there, and cite each.
 
 ## Answering
 

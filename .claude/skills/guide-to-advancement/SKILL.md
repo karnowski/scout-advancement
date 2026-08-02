@@ -17,9 +17,11 @@ must come from text this skill actually retrieved.
 
 The Guide governs *how* advancement is administered — procedures, roles, and
 policy.  For *what* a Scout must do to earn a rank or merit badge, the source is
-`docs/Scouts-BSA-Requirements-2025.pdf` instead.  If a question turns on the text
-of a requirement rather than on how advancement is run, say so and point to the
-requirements book.
+_Scouts BSA Requirements_, and the `scout-req` skill answers from it.  If a
+question turns on the text of a requirement rather than on how advancement is
+run, say so and hand it to `scout-req` — it quotes the printed text with a page
+and a year, and it is loud about any badge the current printing cannot answer
+for, which is not something reading the PDF directly will tell you.
 
 ## Tool
 

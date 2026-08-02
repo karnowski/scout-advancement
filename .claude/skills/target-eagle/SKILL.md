@@ -33,6 +33,7 @@ the partials list. Needs `pdftotext` (`brew install poppler`).
 ruby scripts/te.rb verify   REPORT.pdf                          # parse check — run this first
 ruby scripts/te.rb summary  REPORT.pdf --partials PARTIALS.pdf  # cohorts, what is left, SMC/BoR load
 ruby scripts/te.rb gaps     REPORT.pdf [--scout NAME]           # per-Scout next-rank to-do
+ruby scripts/te.rb badges   REPORT.pdf --partials PARTIALS.pdf  # badge names, one per line
 ruby scripts/te.rb partials REPORT.pdf --partials PARTIALS.pdf [--scout NAME] [--min-pct N]
 ruby scripts/te.rb batch    REPORT.pdf --partials PARTIALS.pdf [--min N] [--min-pct N]
 ruby scripts/te.rb clocks   REPORT.pdf --partials PARTIALS.pdf  # multi-week requirements
@@ -46,6 +47,27 @@ rank must be complete.** A Life Scout with a hole in the Star block means the
 grid is misaligned, not that the Scout skipped something. `verify` also refuses
 any mark that does not land within four points of a column centre and any page
 where the 42 columns do not come out in the expected order.
+
+## Then check the badge names, before anything else
+
+A TroopMaster report has no way to know what year a merit badge's requirements
+are from.  It will print "Artificial Intelligence" at 20% as calmly as it prints
+Camping, and a plan built on the 2025 book for a badge that changed in 2026
+sends a Scout to do months of the wrong work.  Nothing downstream catches that —
+the plan reads perfectly.
+
+So run the whole list through `scout-req` first:
+
+```
+ruby scripts/te.rb badges REPORT.pdf --partials PARTIALS.pdf \
+  | ruby ../scout-req/scripts/req.rb check
+```
+
+It is silent for every badge the 2025 book covers, so the only output is the
+problem.  **Exit 3 means stop.**  Lead the plan with the banner, name the Scouts
+who have that badge in progress, say plainly that the requirements must come
+from `www.scouting.org/meritbadges`, and assign no work on it.  Do not
+substitute the 2025 text, and do not let the rest of the plan bury it.
 
 ### Facts about the reports the script depends on
 
@@ -96,7 +118,8 @@ list.
   "Citizenship In Community" where the book says "Citizenship in the Community".
   The script compares badge names loosely for that reason; `clocks` ends by
   naming any entry that matched nothing, so a rename shows up instead of
-  silently disabling a rule.
+  silently disabling a rule.  `scout-req` folds the same differences, which is
+  why TroopMaster's spellings can be piped straight into `req.rb check`.
 
 ## The analysis
 
@@ -111,7 +134,8 @@ emergency. Requirements 1–6 — including the project, the position of
 responsibility, and the Scoutmaster conference — must all be complete **before**
 the 18th birthday. Only the board of review may happen afterward, up to 24 months
 without special approval (*Scouts BSA Requirements 2025*, Eagle rank footnote 13,
-citing *Guide to Advancement* 8.0.3.1). That exception does not cover the
+citing *Guide to Advancement* 8.0.3.1 — `req.rb show Eagle` prints the footnote
+and the citation line to quote). That exception does not cover the
 project, and a project proposal needs four approvals — the benefiting
 organization, the Scoutmaster, the troop committee, and the council or district —
 before any work starts.
@@ -132,31 +156,39 @@ responsibility completion back a month too. Say that explicitly in the plan.
 ### 3. Run `clocks` before anything else in the plan
 
 This is the equivalent of the fitness chain in Target First Class, and it is
-where the schedule actually gets decided. Requirements verified against
-`docs/Scouts-BSA-Requirements-2025.pdf`:
+where the schedule actually gets decided:
 
 | Badge | Requirement | Clock |
 | :---- | :---------- | :---- |
-| Personal Management | 2a budget, 2c tracking | **13 consecutive weeks**, and 2c must cover the same 13 weeks as 2a |
-| Personal Fitness | 7 outline, 8 completion | **12 weeks**, with a retest every four |
-| Personal Fitness | 1a, 1b | physical and dental exams **gate requirements 2–9** — weeks of booking lead time |
-| Family Life | 3 | **90 days** of recorded home duties |
-| Camping | 9a | **20 nights**, which is a season of campouts, not an afternoon |
-| Citizenship in the Community | 7c | **8 volunteer hours** for the chosen organization — troop service hours do not count |
-| Multisport | 5 | **4 weeks** of tracked training |
+| Personal Management | 2 | **13 weeks** |
+| Personal Fitness | 7, 8 | **12 weeks** |
+| Personal Fitness | 1 | a **gate** — exams must precede the rest |
+| Family Life | 3 | **90 days** |
+| Gardening | 5 | **90 days** |
+| Camping | 9 | **20 nights** |
+| Citizenship in the Community | 7 | **8 volunteer hours** |
+| Multisport | 5 | **4 weeks** |
+
+**These are pointers, not requirement text.**  They match `te.rb`'s `CLOCKS`, and
+they are enough to find the Scouts on a clock and no more — the conditions
+attached to each one are what decide whether it can be compressed.  Pull the
+wording before you plan around it:
+
+```
+ruby ../scout-req/scripts/req.rb show "Personal Management"
+```
 
 Work backwards from the next court of honor. A 13-week badge started the week of
 the report finishes about three months later; started a month after, it misses.
 Name the specific date the cohort has to start, and put it in the leadership
 to-do list.
 
-Always re-read the current requirement text rather than trusting this table;
-requirements are year-versioned.
-
 ### 4. Look for badge-to-badge dependencies
 
-`partials` flags these with `**`. **Emergency Preparedness requirement 1 is
-"Earn the First Aid merit badge."** Both are Eagle-required, so:
+`partials` flags these with `**`. Emergency Preparedness requirement 1 is the
+First Aid merit badge — confirm the wording with
+`req.rb show "Emergency Preparedness"` before it reaches a plan.  Both badges are
+Eagle-required, so:
 
 - A Scout at 98% on First Aid and 97% on Emergency Preparedness is *one
   sign-off* from two Eagle-required badges. That is the cheapest advancement in
@@ -180,12 +212,12 @@ read `batch` alongside `partials`.
 
 ### 6. Check the service hours against the calendar
 
-Star requires six hours. Life requires six hours of which **at least three must
-be conservation-related** — a distinction the grid does not show, so read it out
-of the requirement text. Hours count only while holding the prior rank ("While a
-First Class Scout", "While a Star Scout"), so **a First Class Scout cannot bank
-Life service hours**, and the same is true of active time and positions of
-responsibility. `gaps` prints that warning.
+Star and Life both require six hours, but Life puts a conservation condition on
+part of them — a distinction the grid does not show at all, and the reason to
+run `req.rb show Star` and `req.rb show Life` rather than reading the column.
+Hours also count only while holding the prior rank, so **a First Class Scout
+cannot bank Life service hours**, and the same is true of active time and
+positions of responsibility. `gaps` prints that warning.
 
 Then look for a qualifying event. A Scout blocked on three conservation hours
 with no conservation project on the calendar for two months is a Scout who cannot
@@ -195,10 +227,11 @@ finish, and that is worth more to the reader than another to-do line.
 
 Compare the Eagle block's Participation and Lead Pos numbers. When Participation
 is counting down but Lead Pos still shows the full 180 days, the Scout **has no
-position at all** — and troop elections may be months away. Most Eagle-qualifying
-positions are appointed, not elected (scribe, librarian, historian, quartermaster,
-instructor, webmaster, OA troop representative, JASM), so this is fixable the same
-week. Note that bugler and assistant patrol leader do **not** count for Eagle.
+position at all** — and troop elections may be months away.  This is usually
+fixable the same week, because most Eagle-qualifying positions are appointed
+rather than elected — but the list of which positions qualify is Eagle
+requirement 4, and it does not include every job a troop hands out. Get it from
+`req.rb show Eagle` before naming a position to a Scout.
 
 ## Troop conventions
 
@@ -241,10 +274,11 @@ a whole cohort at once is worth more than any individual sign-off that morning.
 - **guide-to-advancement** — get the policy, with citations. Use it for the Eagle
   project approval chain, boards of review, extensions, and anything about the
   18th birthday.
-- **`docs/Scouts-BSA-Requirements-2025.pdf`** — the requirement text itself.
-  Read it for every requirement you name in the plan; the partials list gives
-  you a code like "8d" and nothing else, and "cook one breakfast, one lunch, and
-  one dinner for your patrol" is what makes it schedulable.
+- **scout-req** — the requirement text itself, and the only thing that knows
+  whether a badge is still current.  Use it for every requirement you name in the
+  plan; the partials list gives you a code like "8d" and nothing else, and it is
+  the wording behind the code that makes a requirement schedulable.  Run the
+  badge-name check above before any of this, and treat its exit 3 as a stop.
 
 State the calendar fact and the advancement implication separately. The calendar
 shows something is scheduled, not that a Scout attended or that a requirement was

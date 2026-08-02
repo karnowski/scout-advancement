@@ -70,22 +70,30 @@ converts a large amount of invisible work into a rank.
 ### 2. Find the time-clocked requirements first
 
 Most requirements can be done any time. A few cannot be compressed, and they are
-what actually decides which court of honor a Scout makes. In the 2025
-requirements the fitness chain is strictly sequential:
+what actually decides which court of honor a Scout makes. The fitness chain is
+the one that matters, and it is strictly sequential:
 
-- **Tenderfoot 6b** — track activity for at least 30 days
-- **Tenderfoot 6c** — show improvement *after practicing for 30 days*
-- **Second Class 7a** — *after completing Tenderfoot 6c*, 30 min/day, 5 days/week, 4 weeks
-- **First Class 8a** — *after completing Second Class 7a*, same again
+| Requirement | Clock | Starts only after |
+| :---------- | :---- | :---------------- |
+| Tenderfoot 6a | — | (the test 6b logs against) |
+| Tenderfoot 6b | **30 days** | 6a |
+| Tenderfoot 6c | **30 days** | 6b |
+| Second Class 7a | **4 weeks** | Tenderfoot 6c |
+| First Class 8a | **4 weeks** | Second Class 7a |
 
-Each link needs the previous one finished. A Scout advancing two ranks in a
-season cannot overlap them. Note also that **Tenderfoot 6a (the fitness test)
-must be recorded before 6b's log can start** — Scouts missing 6a are a step
-further back than they look.
+Each link needs the previous one finished, so a Scout advancing two ranks in a
+season cannot overlap them, and a Scout missing 6a is a step further back than
+they look.
 
-Always re-read the current requirement text from
-`docs/Scouts-BSA-Requirements-2025.pdf` rather than trusting this summary;
-requirements are year-versioned.
+**This table is a pointer, not requirement text.** The conditions on each link —
+what counts as practice, what has to be recorded, what "after" means — are what
+decide whether a Scout can actually make a date. Get them before you plan:
+
+```
+ruby ../scout-req/scripts/req.rb show tenderfoot
+ruby ../scout-req/scripts/req.rb show "second class"
+ruby ../scout-req/scripts/req.rb show "first class"
+```
 
 Other requirements to check for schedule dependence: swim tests (needs an
 aquatics opportunity), orienteering courses, service projects, and anything
@@ -127,8 +135,10 @@ sign-off crew for that meeting.
   more to the reader than another to-do line).
 - **guide-to-advancement** — get the policy, with citations. Use it for anything
   about sequence, sign-off authority, boards, or conferences.
-- **`docs/Scouts-BSA-Requirements-2025.pdf`** — the requirement text itself,
-  especially wherever a time period or a prerequisite is involved.
+- **scout-req** — the requirement text itself, especially wherever a time period
+  or a prerequisite is involved.  `RANKS` in `tfc.rb` names the 121 columns so the
+  grid can be read; those labels are the report's own legend, not the book, and
+  are far too short to plan from.
 
 State the calendar fact and the advancement implication separately. The calendar
 shows something is scheduled, not that a Scout attended or that a requirement was

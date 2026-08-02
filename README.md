@@ -42,6 +42,8 @@ _Scouts BSA Requirements 2025_ (`docs/Scouts-BSA-Requirements-2025.pdf`) — *wh
 a Scout must do, as distinct from the `guide-to-advancement` skill's *how* it is
 administered.  It indexes all 9 ranks, 139 merit badges, and 26 awards, searches
 requirement text, and quotes it verbatim with the printed page and the year.
+It is the only thing in this repository that reads the requirements book; the
+other skills call it rather than opening the PDF themselves.
 
 Because the answer is only as good as the printing it came from, the skill is
 built to be **loud about anything the 2025 book cannot answer**.  A merit badge
@@ -51,6 +53,11 @@ the only other thing that could happen, and is invisible once it reaches a Scout
 Badges the book has never heard of are caught automatically; badges that are in
 the book but changed later are recorded by hand in
 `.claude/skills/scout-req/data/beyond-2025.json`.
+
+Because that check only helps if it actually gets run, it also comes in bulk: a
+`check` command takes a whole list of names, says nothing at all about the ones
+the book covers, and fails on the ones it does not.  `target-eagle` pipes every
+merit badge in a report through it before writing a plan.
 
 The parse checks itself against the book's own Merit Badge Library index before
 anything is quoted.
@@ -76,8 +83,7 @@ Second Class → First Class fitness chain), which Scouts have a pile of banked
 work sitting behind one unearned rank, and whether the Scoutmaster conference and
 board of review load actually fits in the meeting nights available.  It draws
 real dates from `troop-calendar`, policy and citations from
-`guide-to-advancement`, and requirement text from
-`docs/Scouts-BSA-Requirements-2025.pdf`.
+`guide-to-advancement`, and requirement text from `scout-req`.
 
 Plans are written to `plans/target-first-class-YYYY-MM-DD.md`, dated from the
 report they read.
@@ -98,6 +104,11 @@ skill leads with who is running out of time, which requirements carry a
 multi-week clock (Personal Management's 13-week budget, Personal Fitness's
 12-week program, Camping's 20 nights), and which Scouts are one meeting away
 from a rank that has to be awarded before the next rank's clocks can start.
+
+Before any of that, it runs every merit badge named in the report through
+`scout-req`, so a badge whose requirements changed after the 2025 printing stops
+the plan instead of quietly shaping it.  Requirement text comes from `scout-req`
+too, dates from `troop-calendar`, and policy from `guide-to-advancement`.
 
 Plans are written to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report
 they read.

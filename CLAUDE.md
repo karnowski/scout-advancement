@@ -115,13 +115,15 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
 - **`tfc.rb`** (target-first-class) — rebuilds a 25-row by 121-column grid of
   rotated headers and single-glyph marks from `pdftotext -bbox` output.
 - **`te.rb`** (target-eagle) — the same for the Target Eagle grid, plus the
-  Partial Merit Badges List via `pdftotext -layout`.
+  Partial Merit Badges List via `pdftotext -layout`. Its `badges` subcommand
+  prints the in-progress badge names one per line for `req.rb check` to read.
 - **`req.rb`** (scout-req) — indexes every rank, merit badge, and award in the
   requirements book by reading font sizes out of `pdftohtml -xml`, since the book
   numbers nothing and its headings are otherwise indistinguishable from body
   text. Body text comes from plain `pdftotext`. Exits `3` — not `1` — when a
   question needs requirements the 2025 printing does not carry; that status is
-  the skill's whole reason for existing, so preserve it.
+  the skill's whole reason for existing, so preserve it. `check` is the same
+  guard over a list of names, silent unless one is a problem.
 
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
@@ -150,16 +152,45 @@ Two rules generalize across all of them:
   `pdftotext` for the requirements book. Each is justified where it is used. Do
   not swap one without re-measuring against the actual PDF.
 
+### `scout-req` is the only reader of the requirements book
+
+No other skill opens `docs/Scouts-BSA-Requirements-2025.pdf`, and none should.
+Reading it directly gets the text but not the guard: a merit badge introduced or
+revised after that printing produces a fluent, specific, correctly-cited, wrong
+answer, and there is nothing downstream that can catch it. Route requirement
+lookups through `scout-req`, which exits 3 instead.
+
+Skill directories are siblings, so a script calls another by relative path. Every
+script resolves its own paths from `__dir__`, so the working directory does not
+matter:
+
+    ruby ../scout-req/scripts/req.rb show "Personal Management"
+    ruby scripts/te.rb badges R.pdf --partials P.pdf | ruby ../scout-req/scripts/req.rb check
+
+`target-eagle` runs that second line before it plans anything, because a
+TroopMaster report is exactly where a post-2025 badge enters unannounced.
+
+The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
+`BLOCKS`, and `BADGE_PREREQS` in `te.rb` — are **match keys, not a second copy
+of the book.** They exist so a parser can identify a column or find the Scouts on
+a clock. Their labels are far too short to plan from and are not maintained
+against the book; the text that governs comes from `scout-req`. Do not quote one
+into a plan, and do not delete them either — the parsers do not work without
+them.
+
 ## Reference documents (source of truth)
 
 Advancement logic must trace back to these official documents in `docs/`; do not
 rely on memory or general knowledge of Scouting requirements, which change yearly:
 
 - `docs/Scouts-BSA-Requirements-2025.pdf` — the 2025 rank and merit badge
-  requirements. Use this for *what* a Scout must do to advance.
+  requirements, *what* a Scout must do to advance. **Reach it through the
+  `scout-req` skill, not by opening the file** (see above); that skill is what
+  knows the 2025 printing's limits.
 - `docs/guide-to-advancement-2025.pdf` — the Guide to Advancement 2025, the
   policy manual governing *how* advancement is administered (boards of review,
-  procedures, roles). Use this for process and policy questions.
+  procedures, roles). Use this for process and policy questions, via the
+  `guide-to-advancement` skill.
 
 These are large PDFs (the Guide to Advancement is ~27 MB). Read specific page
 ranges rather than loading them whole.
