@@ -33,11 +33,14 @@ ruby scripts/calendar.rb info
 - Ranges are inclusive and match anything that **overlaps** them, so a campout
   that starts before `--from` and runs into the window still shows up.
 
-The feed URL defaults to the Troop 400 calendar linked in `README.md`; override
-it with the `TROOP_CALENDAR_URL` environment variable.  The cache covers roughly
-two years back and three years forward, rebuilt on each sync.  If the feed can't
-be reached, the script re-expands the last downloaded copy and warns — pass that
-warning on, because the answer may be stale.
+The feed URL comes from `TROOP-SETTINGS.md`'s "Calendar feed" entry — export it
+as `TROOP_CALENDAR_URL` before running the script the first time (a synced URL
+is then cached in `.cache/calendar.db`, so later runs don't need it set).  If
+`TROOP-SETTINGS.md` doesn't exist yet, copy `TROOP-SETTINGS.md.example` and fill
+it in.  The cache covers roughly two years back and three years forward, rebuilt
+on each sync.  If the feed can't be reached, the script re-expands the last
+downloaded copy and warns — pass that warning on, because the answer may be
+stale.
 
 ## Reading the calendar
 

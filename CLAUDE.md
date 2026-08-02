@@ -171,55 +171,14 @@ ranges rather than loading them whole.
 - Requirements are year-versioned. Keep the year explicit (e.g. 2025) so future
   updates can add new versions without silently changing behavior.
 
-## Troop 400
+## Troop settings
 
-Troop 400 is a Scouting America troop in Durham, North Carolina.  The troop's official calendar feed is linked in `README.md`.
-
-**Current Patrols** (as of 2026-08-01)
-
-| Patrol | Nickname | Notes |
-| :----- | :------- | :---- |
-| BioHazards | Hazards | most are age 14-15, but a few are older |
-| Brotherhood of the Flame | Brotherhood | most are age 14-15, but a few are older |
-| Screamin' Eagles | Eagles | all are age 13 |
-| Seals | _(none)_ | most are age 12-13 |
-| Patriotic Squirrels | Squirrels | most are age 11-12 |
-
-**Previous Patrols** (include but not limited to)
-
-| Patrol | Retired | Notes |
-| :----- | :------ | :---- |
-| Flamingos | Summer 2026 | most aged out, some moved to Brotherhood & BioHazards |
-| Skeletons | Early 2025 | big patrol split into Brotherhood & BioHazards |
-
-Additionally, the "Bald Eagles" is the adult scoutmaster patrol.  Note, this patrol name is infrequently used, but when it is, it is always fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named (and more commonly mentioned) youth patrol.
-
-### How the troop runs advancement
-
-These apply to any advancement planning — rank or merit badge, Target First
-Class or Target Eagle:
-
-- **Abbreviations** — the troop uses "SMC" for Scoutmaster Conference and "BoR"
-  for Board of Review.
-- **Scoutmaster conferences and boards of review are never scheduled as separate
-  events.** They happen inside regular meetings, so they never appear on the
-  calendar feed. Do not report their absence from it as a finding or a gap.
-- **Plan up to 3 conferences or 3 boards per meeting.** The real constraint is
-  meeting-night capacity. Total the load, check it fits the meeting nights
-  available, and spread it — batching it before a court of honor does not work.
-  Conferences and boards can run concurrently.
-- **Committee members are almost always also Assistant Scoutmasters.** They can sign
-  off merit badge requirements, and they can run boards of review.  Only the
-  Scoutmaster can run a Scoutmaster conference.
-- **Collapse the closing three requirements** — Scout Spirit, Scoutmaster
-  conference, and board of review — into one line, "needs an SMC/BoR meeting".
-  At Scout rank, which has no board of review, it is "needs an SMC meeting".
-- **"Saturday at the Shed" is an intensive sign-off and training session,** not a
-  work day: roughly 3–4 hours with 6–7 adult leaders signing off. Split the
-  leader roster between Target First Class rank sign-offs and Target Eagle merit
-  badge sign-offs, plan ~3 rotating stations, and expect it to absorb about 3
-  conferences and 3 boards as well. Check how many fall in the planning window —
-  there may be only one.
+Troop-specific facts — the troop's name, location, patrols, and how it runs
+advancement (SMC/BoR abbreviations, per-meeting capacity, sign-off
+authority, recurring events) — live in `TROOP-SETTINGS.md`, not here.  That
+file is gitignored so a fork of this project doesn't accidentally commit
+another troop's details; `TROOP-SETTINGS.md.example` is the checked-in
+template.  Skills that need troop context should read `TROOP-SETTINGS.md`.
 
 ## Technology Preferences
 

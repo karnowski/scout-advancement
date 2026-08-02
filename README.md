@@ -2,9 +2,20 @@
 
 Claude skills to help the troop Advancement Chair and Scoutmasters communicate and plan a Scouting America troop advancement program.
 
-## References
+## Getting started
 
-- [Official Troop 400 Calendar](https://calendar.google.com/calendar/ical/troop400durham.org_cc4de26nmjft4ger2t11mon03o%40group.calendar.google.com/public/basic.ics)
+1. Install the dependencies: Ruby 3.4.5 (via asdf), gems via `bundle install`,
+   and `poppler` for `pdftotext`/`pdftohtml` (`brew install poppler`).
+2. Copy the troop settings template and fill it out for your troop:
+
+   ```
+   cp TROOP-SETTINGS.md.example TROOP-SETTINGS.md
+   ```
+
+   Edit `TROOP-SETTINGS.md` with your troop's number, location, calendar feed
+   URL, patrols, and advancement conventions. `TROOP-SETTINGS.md` is gitignored,
+   so a fork of this project won't accidentally commit another troop's details.
+3. Drop the TroopMaster reports any skills need into `reports/` (also gitignored).
 
 ## Skills
 
@@ -47,8 +58,8 @@ anything is quoted.
 ### `troop-calendar`
 
 Answers questions about the troop schedule — what's coming up, when the next
-campout or court of honor is, what's on a given date — from the [official Troop
-400 calendar feed](#references).
+campout or court of honor is, what's on a given date — from the troop's
+published calendar feed (see `TROOP-SETTINGS.md`).
 
 It downloads the Google Calendar iCal feed, expands recurring events into concrete occurrences (resolving the many single-instance overrides the troop's calendar accumulates), and caches them in SQLite, re-syncing when the cache goes stale.
 

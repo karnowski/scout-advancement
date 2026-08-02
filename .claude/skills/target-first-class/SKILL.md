@@ -105,41 +105,19 @@ all the requirements for a rank, *except Scout rank*, a Scout meets with a board
 of review" (*GTA* 4.2.1.3, printed p. 19). That exception makes the Scout-rank
 cohort the fastest awards available before any court of honor.
 
-## Troop 400 conventions
+## Troop conventions
 
-These are how this troop actually runs, and the plan must match them:
+Read `TROOP-SETTINGS.md`'s "How the troop runs advancement" section before
+writing the plan — it has the SMC/BoR abbreviations, whether conferences and
+boards appear on the calendar, the per-meeting conference/board cap, sign-off
+authority, and any recurring sign-off event like "Saturday at the Shed." The
+plan must match those conventions; the script's "needs an SMC/BoR meeting" line
+assumes the troop actually uses that abbreviation.
 
-- **Conferences and boards are never scheduled as separate events.** They happen
-  inside regular meetings, so they will never appear on the calendar. Do not
-  report their absence from the feed as a finding.
-- **Plan up to 3 conferences or 3 boards per meeting.** The constraint is
-  meeting-night capacity, not calendar space. Divide the total load by the
-  meeting nights available and check it fits — then spread it, because batching
-  it before a court of honor does not work.
-- **Conferences and boards can run concurrently.** Committee members conduct
-  boards and "may not test or pass Scouts on rank requirements" (*GTA* 4.2.1.2,
-  printed p. 19), so board reviewers are never drawn from the sign-off crew.
-- **Collapse the closing three requirements.** Scout Spirit, Scoutmaster
-  conference, and board of review are reported as one line — **"needs an SMC/BoR
-  meeting"**, or **"needs an SMC meeting"** at Scout rank. Everything else listed
-  for a Scout should be real program work. The script already does this.
-
-### Saturday at the Shed
-
-Intensive rank sign-off and training sessions — roughly **3–4 hours** with
-**6–7 adult leaders** signing off. Per hour and per adult, the most productive
-advancement venue the troop has. Plan every one that falls in the window:
-
-- Split the leader roster between **Target First Class** rank sign-offs and
-  **Target Eagle** merit badge sign-offs, reserving a meaningful share for each.
-- Structure it as a short all-hands opener plus **~3 rotating stations**, and
-  name the specific requirements and Scouts each station can clear. Group
-  physical requirements (a measured mile, fitness tests) into the opener.
-- A session can also absorb **~3 conferences and ~3 boards**. Conferences cost
-  sign-off capacity — they take the Scoutmaster out of the rotation for about 15
-  minutes each. Boards do not, since committee members are not sign-off leaders.
-- **Check how many Shed dates are actually in the window.** There may be only
-  one, or none. Say so plainly, and consider recommending another.
+One thing that holds regardless of troop convention: committee members conduct
+boards of review and "may not test or pass Scouts on rank requirements" (*GTA*
+4.2.1.2, printed p. 19), so board reviewers should never be drawn from the
+sign-off crew for that meeting.
 
 ## Working with the other skills
 

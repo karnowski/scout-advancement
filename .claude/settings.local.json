@@ -17,7 +17,8 @@
       "Bash(pdftohtml *)",
       "Bash(ruby scripts/req.rb *)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(TROOP_CALENDAR_URL=* ruby scripts/calendar.rb *)"
     ]
   }
 }

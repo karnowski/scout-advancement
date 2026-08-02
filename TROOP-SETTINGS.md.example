@@ -1,0 +1,45 @@
+# Troop <NUMBER>
+
+Troop <NUMBER> is a Scouting America troop in <CITY>, <STATE>.
+
+## Calendar feed (`TROOP_CALENDAR_URL`)
+
+    <https://calendar.google.com/calendar/ical/... or other published iCal feed URL>
+
+## Current Patrols (as of <YYYY-MM-DD>)
+
+| Patrol | Nickname | Notes |
+| :----- | :------- | :---- |
+| <Patrol Name> | <Nickname> | <e.g. age range or other notes> |
+| <Patrol Name> | <Nickname> | <e.g. age range or other notes> |
+
+## Previous Patrols (include but not limited to)
+
+| Patrol | Retired | Notes |
+| :----- | :------ | :---- |
+| <Patrol Name> | <e.g. Summer 2026> | <what happened to its members> |
+
+Additionally, the "<Adult Patrol Name>" is the adult scoutmaster patrol.  Note
+any naming quirks that could be confused with a youth patrol.
+
+## How the troop runs advancement
+
+These apply to any advancement planning — rank or merit badge, Target First
+Class or Target Eagle:
+
+- **Abbreviations** — note any troop-specific shorthand (e.g. "SMC" for
+  Scoutmaster Conference and "BoR" for Board of Review).
+- **Scoutmaster conferences and boards of review** — describe whether/how they
+  appear on the calendar (e.g. inside regular meetings vs. scheduled
+  separately).
+- **Per-meeting capacity** — describe the real constraint on how many
+  conferences or boards can be scheduled per meeting, and whether they can run
+  concurrently.
+- **Who can sign off what** — describe which adult roles can sign off merit
+  badge requirements, run boards of review, and run Scoutmaster conferences.
+- **Any standard shorthand for the closing rank requirements** (Scout Spirit,
+  Scoutmaster conference, board of review).
+- **Any recurring troop-specific events** relevant to advancement planning
+  (e.g. an intensive sign-off day) — describe format, duration, adult
+  leader turnout, and how much of the conference/board load it typically
+  absorbs.

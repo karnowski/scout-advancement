@@ -35,11 +35,6 @@ CACHE_DIR = File.join(SKILL_DIR, ".cache")
 DB_PATH   = File.join(CACHE_DIR, "calendar.db")
 ICS_PATH  = File.join(CACHE_DIR, "feed.ics")
 
-# Official Troop 400 calendar (public iCal feed; see README.md).
-DEFAULT_FEED_URL =
-  "https://calendar.google.com/calendar/ical/" \
-  "troop400durham.org_cc4de26nmjft4ger2t11mon03o%40group.calendar.google.com/public/basic.ics"
-
 SCHEMA_VERSION = 1
 DEFAULT_TZ    = "America/New_York"
 STALE_SECONDS = 6 * 3600          # re-download if the cache is older than this
@@ -230,7 +225,9 @@ end
 # sync
 # --------------------------------------------------------------------------
 def feed_url
-  ENV["TROOP_CALENDAR_URL"] || (DB.ready? ? DB.meta("feed_url") : nil) || DEFAULT_FEED_URL
+  ENV["TROOP_CALENDAR_URL"] || (DB.ready? ? DB.meta("feed_url") : nil) ||
+    raise("No calendar feed URL. Set TROOP_CALENDAR_URL to the feed from " \
+          "TROOP-SETTINGS.md (see TROOP-SETTINGS.md.example if it doesn't exist yet).")
 end
 
 def download(url, redirects: 5)

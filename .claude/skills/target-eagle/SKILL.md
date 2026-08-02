@@ -200,43 +200,36 @@ positions are appointed, not elected (scribe, librarian, historian, quartermaste
 instructor, webmaster, OA troop representative, JASM), so this is fixable the same
 week. Note that bugler and assistant patrol leader do **not** count for Eagle.
 
-## Troop 400 conventions
+## Troop conventions
 
-- **Conferences and boards are never scheduled as separate events.** They happen
-  inside regular meetings, so they will never appear on the calendar. Do not
-  report their absence from the feed as a finding.
-- **Plan up to 3 conferences or 3 boards per meeting.** For a Target Eagle
-  cohort this cap is usually slack, not a constraint — say so plainly rather than
-  padding the plan with throughput math that is not binding. `summary` reports
-  the eventual load and the ready-now load separately for exactly that reason.
-- **Conferences and boards can run concurrently.** Committee members conduct
-  boards and "may not test or pass Scouts on rank requirements" (*GTA* 4.2.1.2,
-  printed p. 19), so board reviewers are never drawn from the sign-off crew.
-  Only the Scoutmaster runs Scoutmaster conferences.
-- **The Eagle board of review is not a troop board.** It is conducted per council
-  policy, usually by the district. Do not schedule it into a troop meeting.
-- **Collapse the closing three requirements** — Scout Spirit, Scoutmaster
-  conference, and board of review — into one line, **"needs an SMC/BoR
-  meeting"**. The script already does this. Eagle is written out instead, because
-  Scout Spirit there also carries the reference list on the application.
+Read `TROOP-SETTINGS.md`'s "How the troop runs advancement" section before
+writing the plan — it has the SMC/BoR abbreviations, whether conferences and
+boards appear on the calendar, the per-meeting conference/board cap, sign-off
+authority, and any recurring sign-off event like "Saturday at the Shed." For a
+Target Eagle cohort the per-meeting cap is usually slack, not a constraint —
+say so plainly rather than padding the plan with throughput math that is not
+binding. `summary` reports the eventual load and the ready-now load separately
+for exactly that reason.
 
-### Saturday at the Shed
+Two things that hold regardless of troop convention:
 
-Intensive sign-off sessions, roughly **3–4 hours** with **6–7 adult leaders**.
-Per hour and per adult, the most productive advancement venue the troop has, and
-there are usually only two or three a year — **check how many fall in the window
-and say so plainly.**
+- Committee members conduct boards of review and "may not test or pass Scouts
+  on rank requirements" (*GTA* 4.2.1.2, printed p. 19), so board reviewers
+  should never be drawn from the sign-off crew. Only the Scoutmaster runs
+  Scoutmaster conferences.
+- **The Eagle board of review is not a troop board.** It is conducted per
+  council policy, usually by the district. Do not schedule it into a troop
+  meeting.
 
-- Split the leader roster between **Target First Class** rank sign-offs and
-  **Target Eagle** merit badge sign-offs.
-- Use the opener for the thing that has to *start*, not finish: launching a
-  13-week or 12-week clock for a whole cohort at once is worth more than any
-  individual sign-off that morning.
-- Then run **~3 rotating stations**, and name the specific requirements and
-  Scouts each can clear. `partials --min-pct 85` gives the closeout list.
-- A session absorbs about **3 conferences and 3 boards**. Conferences cost
-  sign-off capacity — they take the Scoutmaster out of the rotation for about 15
-  minutes each. Boards do not, since committee members are not sign-off leaders.
+When the troop's convention collapses the closing three requirements into one
+line, write Eagle out in full instead of collapsing it — Scout Spirit there
+also carries the reference list on the application, which is worth calling out
+on its own.
+
+If the troop has a recurring intensive sign-off event, use the opener for the
+thing that has to *start*, not finish: launching a 13-week or 12-week clock for
+a whole cohort at once is worth more than any individual sign-off that morning.
+`partials --min-pct 85` gives the closeout list for the rotating stations.
 
 ## Working with the other skills
 
