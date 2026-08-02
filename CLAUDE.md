@@ -119,9 +119,9 @@ ranges rather than loading them whole.
 
 ## Troop 400
 
-Troop 400 is a BSA troop in Durham, North Carolina. The troop's official calendar feed is linked in `README.md`.
+Troop 400 is a Scouting America troop in Durham, North Carolina.  The troop's official calendar feed is linked in `README.md`.
 
-Current patrols are (as of 2026-08-01):
+**Current Patrols** (as of 2026-08-01)
 
 | Patrol | Nickname | Notes |
 | :----- | :------- | :---- |
@@ -131,14 +131,14 @@ Current patrols are (as of 2026-08-01):
 | Seals | _(none)_ | most are age 12-13 |
 | Patriotic Squirrels | Squirrels | most are age 11-12 |
 
-Previous patrols include:
+**Previous Patrols** (include but not limited to)
 
 | Patrol | Retired | Notes |
 | :----- | :------ | :---- |
 | Flamingos | Summer 2026 | most aged out, some moved to Brotherhood & BioHazards |
 | Skeletons | Early 2025 | big patrol split into Brotherhood & BioHazards |
 
-Additionally, the "Bald Eagles" are the adult scoutmaster patrol.  However, this patrol name is infrequently used, but when it is, it is fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named youth patrol.
+Additionally, the "Bald Eagles" is the adult scoutmaster patrol.  Note, this patrol name is infrequently used, but when it is, it is always fully-qualified as "Bald Eagles" in order to distinguish it from the similarly-named (and more commonly mentioned) youth patrol.
 
 ## Technology Preferences
 
