@@ -23,5 +23,13 @@
     "that advancement logic traces back to a document, never to recollection --",
     "so entries go in only when someone has checked scouting.org/meritbadges."
   ],
-  "badges": []
+  "badges": [
+    {
+      "name": "Artificial Intelligence",
+      "status": "new",
+      "effective": "2026",
+      "note": "New merit badge introduced after the 2025 printing; requirements are not in this book.",
+      "source": "www.scouting.org/meritbadges, confirmed 2026-08-02"
+    }
+  ]
 }

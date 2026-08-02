@@ -16,7 +16,8 @@
       "Bash(pdfinfo docs/Scouts-BSA-Requirements-2025.pdf)",
       "Bash(pdftohtml *)",
       "Bash(ruby scripts/req.rb *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }
