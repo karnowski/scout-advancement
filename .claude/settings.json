@@ -4,19 +4,16 @@
       "Bash(ruby -v)",
       "Bash(gem -v)",
       "Bash(gem list *)",
-      "Bash(bundle exec *)",
-      "Bash(bundle install *)",
+      "Bash(bundle exec rubocop)",
       "Bash(ruby scripts/gta.rb *)",
       "Bash(ruby scripts/calendar.rb *)",
       "Bash(ruby scripts/tfc.rb *)",
-      "Bash(pdftotext *)",
       "Bash(ruby scripts/te.rb *)",
-      "Bash(git check-ignore *)",
-      "Bash(pdftohtml *)",
       "Bash(ruby scripts/req.rb *)",
       "Bash(ruby ../scout-req/scripts/req.rb *)",
-      "Bash(echo \"EXIT=$?\")",
-      "Bash(echo \"EXIT: $?\")",
+      "Bash(pdftotext *)",
+      "Bash(pdftohtml *)",
+      "Bash(git check-ignore *)",
       "Bash(TROOP_CALENDAR_URL=* ruby scripts/calendar.rb *)"
     ]
   }
