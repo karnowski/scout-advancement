@@ -115,12 +115,25 @@ cohort the fastest awards available before any court of honor.
 
 ## Troop conventions
 
-Read `TROOP-SETTINGS.md`'s "How the troop runs advancement" section before
-writing the plan — it has the SMC/BoR abbreviations, whether conferences and
-boards appear on the calendar, the per-meeting conference/board cap, sign-off
-authority, and any recurring sign-off event like "Saturday at the Shed." The
-plan must match those conventions; the script's "needs an SMC/BoR meeting" line
-assumes the troop actually uses that abbreviation.
+**Read all of `TROOP-SETTINGS.md` before writing the plan, not just one section.**
+Three of its sections change what the plan says, and two of them can silently
+invalidate output that otherwise looks right:
+
+- **"How the troop runs advancement"** — the SMC/BoR abbreviations, whether
+  conferences and boards appear on the calendar, the per-meeting cap, sign-off
+  authority, and any recurring sign-off event like "Saturday at the Shed." The
+  plan must match those conventions; the script's "needs an SMC/BoR meeting"
+  line assumes the troop actually uses that abbreviation. It also records local
+  readings of ambiguous requirements — the Tenderfoot 6b/6c 30-day question is
+  settled there, not in the book.
+- **"Advancement Updates"** — requirement changes that postdate the 2025
+  printings. These override both the requirements book and the report's own
+  marks, and no script catches them. Apply them by hand and say in the plan that
+  you did, naming the Scouts affected.
+- **"Scout Updates"** — per-Scout facts the report cannot know: a Scout who has
+  left the troop and must not appear in any answer, or work already finished
+  that the grid still shows as open. Check every name in the report against this
+  section before it reaches a to-do list.
 
 One thing that holds regardless of troop convention: committee members conduct
 boards of review and "may not test or pass Scouts on rank requirements" (*GTA*

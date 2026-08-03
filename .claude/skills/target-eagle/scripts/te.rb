@@ -44,6 +44,14 @@ require "tempfile"
 # The `active`/`service`/`position` strings here are labels for a column, not
 # requirement text -- the wording that governs is whatever `scout-req` prints
 # for that rank. Do not quote these into a plan.
+#
+# `active_days`/`position_days` are the same two terms as numbers, because the
+# report counts down in days and the only way to see that a Scout holds no
+# position at all is to notice the column still sitting at its full term.
+# TroopMaster uses 30-day months: 180 for six is confirmed against a Life Scout
+# whose Eagle "Lead Pos" printed exactly 180 while his tenure clock had already
+# started; 120 for four follows from the same arithmetic and has not been seen
+# at full term in a report yet.
 # --------------------------------------------------------------------------
 BLOCKS = [
   {
@@ -51,8 +59,10 @@ BLOCKS = [
     columns: ["Participation", "Scout Spirit", *["Merit Badge"] * 6,
               "Serv Proj", "Lead Pos", "Child Protect", "SM Conf", "Star BOR"],
     active: "four months active as a First Class Scout",
+    active_days: 120,
     service: "six hours of service",
     position: "four months in a position of responsibility",
+    position_days: 120,
     training: "Child Protect",
     training_label: "Child Protection exercises + Personal Safety Awareness videos (req. 6a/6b)"
   },
@@ -61,8 +71,10 @@ BLOCKS = [
     columns: ["Participation", "Scout Spirit", *["Merit Badge"] * 5,
               "Serv Proj", "Lead Pos", "Teach Edge", "SM Conf", "Life BOR"],
     active: "six months active as a Star Scout",
+    active_days: 180,
     service: "six hours of service, at least three conservation-related",
     position: "six months in a position of responsibility",
+    position_days: 180,
     training: "Teach Edge",
     training_label: "Teaching EDGE demonstration (req. 6)"
   },
@@ -71,8 +83,10 @@ BLOCKS = [
     columns: ["Participation", "Scout Spirit", *["Merit Badge"] * 10,
               "Lead Pos", "Eagle Proj", "SM Conf", "Eagle BOR"],
     active: "six months active as a Life Scout",
+    active_days: 180,
     service: nil,
     position: "six months in a position of responsibility",
+    position_days: 180,
     training: nil,
     training_label: nil
   }
@@ -116,22 +130,27 @@ HEADER_BAND   = 70.0    # how far above the header baseline a wrapped header may
 # also the only thing that knows whether the badge changed after the 2025
 # printing. Run `badges` through `req.rb check` before trusting any of this.
 # --------------------------------------------------------------------------
+# `days:` is the span as a number, for working backwards from a court of honor.
+# It is nil wherever the span is not a fixed stretch of calendar: a gate, a count
+# of nights, or a count of volunteer hours can all be compressed or spread out,
+# so there is no honest date to back-date from. `clocks --by DATE` skips those
+# rather than inventing one.
 CLOCKS = [
-  { badge: "Personal Management", reqs: %w[2], span: "13 consecutive weeks",
+  { badge: "Personal Management", reqs: %w[2], span: "13 consecutive weeks", days: 91,
     note: "req. 2a budget and 2c tracking must cover the same 13 weeks" },
-  { badge: "Personal Fitness", reqs: %w[7 8], span: "12 weeks",
+  { badge: "Personal Fitness", reqs: %w[7 8], span: "12 weeks", days: 84,
     note: "req. 7 outlines the program, req. 8 completes it with a retest every 4 weeks" },
-  { badge: "Personal Fitness", reqs: %w[1], span: "gate",
+  { badge: "Personal Fitness", reqs: %w[1], span: "gate", days: nil,
     note: "req. 1 physical + dental exams must precede reqs. 2-9 — book them first" },
-  { badge: "Family Life", reqs: %w[3], span: "90 days",
+  { badge: "Family Life", reqs: %w[3], span: "90 days", days: 90,
     note: "req. 3 keeps a record of home duties for 90 days" },
-  { badge: "Multisport", reqs: %w[5], span: "4 weeks",
+  { badge: "Multisport", reqs: %w[5], span: "4 weeks", days: 28,
     note: "req. 5 is a four-week training plan with a tracked chart" },
-  { badge: "Camping", reqs: %w[9], span: "20 nights",
+  { badge: "Camping", reqs: %w[9], span: "20 nights", days: nil,
     note: "req. 9a is 20 nights of camping; 9b needs two outdoor activities, 9c a project" },
-  { badge: "Citizenship in the Community", reqs: %w[7], span: "8 volunteer hours",
+  { badge: "Citizenship in the Community", reqs: %w[7], span: "8 volunteer hours", days: nil,
     note: "req. 7c volunteers 8 hours for the chosen organization — troop service does not count" },
-  { badge: "Gardening", reqs: %w[5], span: "90 days",
+  { badge: "Gardening", reqs: %w[5], span: "90 days", days: 90,
     note: "req. 5 maintains a bin or garden for 90 days" }
 ].freeze
 
@@ -498,6 +517,18 @@ module Render
     end
     puts "\n#{load_line(report)}"
     puts pipeline_line(report, partials) if partials
+    stalled = no_position_line(report)
+    puts stalled if stalled
+  end
+
+  # Worth a roster-level line because it is both invisible in the grid and
+  # usually fixable the same week — most qualifying positions are appointed.
+  def no_position_line(report)
+    stalled = report.scouts.select { |s| s.working_block && no_position?(s, s.working_block) }
+    return nil if stalled.empty?
+
+    "No position of responsibility running at all: #{stalled.map(&:short).join(', ')} " \
+      "— most qualifying positions are appointed, so this is usually fixable this week."
   end
 
   def summary_line(scout, block)
@@ -576,12 +607,42 @@ module Render
       scout.program_gaps(block).each do |column|
         puts "    #{detail(scout, block, column, report.date)}"
       end
+      lag = position_lag(scout, block)
+      puts "    !! #{lag}" if lag
       puts "    -> #{meeting_phrase(block)}" if scout.needs_meeting?(block)
       if block[:name] != "Eagle"
         puts "    NOTE: #{block[:name]} requirements count only while a #{block[:from]} " \
              "Scout — none of this can be banked early."
       end
     end
+  end
+
+  # The rank's tenure clock and the position's run separately, so comparing them
+  # is the only thing in the report that says whether a Scout holds a position at
+  # all. Both count down from the same term, so they move together for a Scout
+  # who took a position on the day the rank was awarded; a "Lead Pos" still at
+  # full term while "Participation" has started counting is a Scout with no
+  # position, which no single column shows.
+  def position_lag(scout, block)
+    active   = scout.remaining(block, "Participation")
+    position = scout.remaining(block, "Lead Pos")
+    return nil unless active && position && position > active
+
+    if no_position?(scout, block)
+      "no position of responsibility yet — the #{block[:name]} clock is already " \
+        "#{block[:active_days] - active} days in, so every day now adds a day at the end."
+    else
+      "position started #{position - active} days after the rank — it finishes that much later."
+    end
+  end
+
+  # The strict case: the column is untouched at its full term, so the Scout has
+  # never held a position in this rank. A Scout who merely started late still has
+  # one, and conflating the two turns a scheduling detail into a false alarm.
+  def no_position?(scout, block)
+    active   = scout.remaining(block, "Participation")
+    position = scout.remaining(block, "Lead Pos")
+    active && position && position > active && position >= block[:position_days]
   end
 
   def detail(scout, block, column, date)
@@ -658,9 +719,10 @@ module Render
     puts partials.map(&:badge).uniq.sort
   end
 
-  def clocks(_report, partials)
+  def clocks(report, partials, by: nil)
     puts "\n== Requirements with a calendar clock =="
-    quiet = CLOCKS.reject { |clock| report_clock?(clock, partials) }
+    puts "  Working backwards from #{by}." if by
+    quiet = CLOCKS.reject { |clock| report_clock?(clock, partials, by, report.date) }
     # Naming a clock that matched nothing is the point: it is how a renamed badge
     # or a year-over-year requirement change shows up instead of vanishing.
     unless quiet.empty?
@@ -672,19 +734,34 @@ module Render
   end
 
   # Returns false when no Scout has this clock open, so the caller can say so.
-  def report_clock?(clock, partials)
+  def report_clock?(clock, partials, by = nil, today = nil)
     key  = badge_key(clock[:badge])
     hits = partials.select { |p| badge_key(p.badge) == key && p.numbers.intersect?(clock[:reqs]) }
     return false if hits.empty?
 
     puts "\n  #{clock[:badge]} — reqs. #{clock[:reqs].join('/')} — #{clock[:span]}"
     puts "    #{clock[:note]}"
+    deadline = by && start_by(clock, by, today)
+    puts "    #{deadline}" if deadline
     hits.sort_by { |p| -p.pct }.each do |p|
       open = p.open_reqts.select { |c| clock[:reqs].include?(c[/\A\d+/]) }
       puts format("    %-24s %3d%%  still open here: %s", p.scout.split(",").first, p.pct,
                   open.join(", "))
     end
     true
+  end
+
+  # The span backed off the target date. A clock with no fixed span says so
+  # rather than producing a date it cannot stand behind.
+  def start_by(clock, by, today)
+    return "#{clock[:span]} is not a fixed stretch of calendar — no start date to work back to." \
+      unless clock[:days]
+
+    start = by - clock[:days]
+    return "must start by #{start} to finish by #{by}." if today.nil? || start >= today
+
+    finish = today + clock[:days]
+    "too late for #{by} — started today it finishes #{finish}, #{(finish - by).to_i} days after."
   end
 
   def scouts(report, only)
@@ -743,6 +820,10 @@ USAGE = <<~TEXT
     clocks   REPORT.pdf --partials P.pdf    requirements with a multi-week clock attached
     json     REPORT.pdf [--partials P.pdf]  the whole parse, for further analysis
 
+  --by DATE on `clocks` works each span backwards from a court of honor and
+  prints the date that cohort has to start, or says it is already too late:
+      ruby scripts/te.rb clocks R.pdf --partials P.pdf --by 2026-12-15
+
   --partials takes the matching TroopMaster "Partial Merit Badges List" PDF.
   `badges` is meant to be piped, and exit 3 there means stop and read the banner:
       ruby scripts/te.rb badges R.pdf --partials P.pdf | ruby ../scout-req/scripts/req.rb check
@@ -782,7 +863,16 @@ when "partials"
 when "batch"
   Render.batch(report, partials, min: flag("--min", "2").to_i,
                                  min_pct: flag("--min-pct", "0").to_i)
-when "clocks"   then Render.clocks(report, partials)
-when "json"     then Render.json(report, partials)
+when "clocks"
+  by = flag("--by")
+  begin
+    # strptime, not parse: Date.parse("tuesday") happily returns next Tuesday, so
+    # a typo would silently plan the whole cohort against the wrong deadline.
+    by &&= Date.strptime(by, "%Y-%m-%d")
+  rescue Date::Error
+    abort "clocks: --by takes a YYYY-MM-DD date, e.g. --by 2026-12-15"
+  end
+  Render.clocks(report, partials, by: by)
+when "json" then Render.json(report, partials)
 else abort USAGE
 end

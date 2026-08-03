@@ -36,7 +36,7 @@ ruby scripts/te.rb gaps     REPORT.pdf [--scout NAME]           # per-Scout next
 ruby scripts/te.rb badges   REPORT.pdf --partials PARTIALS.pdf  # badge names, one per line
 ruby scripts/te.rb partials REPORT.pdf --partials PARTIALS.pdf [--scout NAME] [--min-pct N]
 ruby scripts/te.rb batch    REPORT.pdf --partials PARTIALS.pdf [--min N] [--min-pct N]
-ruby scripts/te.rb clocks   REPORT.pdf --partials PARTIALS.pdf  # multi-week requirements
+ruby scripts/te.rb clocks   REPORT.pdf --partials PARTIALS.pdf [--by YYYY-MM-DD]
 ruby scripts/te.rb json     REPORT.pdf --partials PARTIALS.pdf
 ```
 
@@ -180,8 +180,22 @@ ruby ../scout-req/scripts/req.rb show "Personal Management"
 
 Work backwards from the next court of honor. A 13-week badge started the week of
 the report finishes about three months later; started a month after, it misses.
-Name the specific date the cohort has to start, and put it in the leadership
-to-do list.
+Get the court of honor's date from **troop-calendar**, then hand it to `--by` and
+put the dates it prints in the leadership to-do list:
+
+```
+ruby scripts/te.rb clocks REPORT.pdf --partials PARTIALS.pdf --by 2026-12-15
+```
+
+Each clock then prints the date that cohort has to start, or says plainly that
+it is already too late and by how many days. Three of the entries — the Personal
+Fitness exam gate, Camping's 20 nights, and Citizenship in the Community's 8
+volunteer hours — are not fixed stretches of calendar, and `--by` says so rather
+than inventing a date. Those three are scheduled against opportunities, not
+against a span, so they need calendar events instead of a start date.
+
+Do not compute these dates by hand. `--by` exists so the arithmetic is in the
+script, where it can be checked, rather than in a one-off shell command.
 
 ### 4. Look for badge-to-badge dependencies
 
@@ -225,20 +239,45 @@ finish, and that is worth more to the reader than another to-do line.
 
 ### 7. Check for a missing position of responsibility
 
-Compare the Eagle block's Participation and Lead Pos numbers. When Participation
-is counting down but Lead Pos still shows the full 180 days, the Scout **has no
-position at all** — and troop elections may be months away.  This is usually
-fixable the same week, because most Eagle-qualifying positions are appointed
-rather than elected — but the list of which positions qualify is Eagle
-requirement 4, and it does not include every job a troop hands out. Get it from
-`req.rb show Eagle` before naming a position to a Scout.
+`summary` and `gaps` both make this comparison for you — the rank's tenure clock
+and the position's run separately, so a "Lead Pos" still sitting at its full term
+while "Participation" has started counting down is a Scout with **no position at
+all**, which no single column shows. `summary` names them in one line; `gaps`
+prints a `!!` line under the Scout.
+
+Read the two apart. "No position of responsibility running at all" is the
+emergency — troop elections may be months away. "Position started N days after
+the rank" is a different and much smaller thing: the Scout has a position, it
+just finishes N days later than the rank tenure does, which only matters if it
+pushes past a court of honor.
+
+The no-position case is usually fixable the same week, because most
+Eagle-qualifying positions are appointed rather than elected — but the list of
+which positions qualify is Eagle requirement 4, and it does not include every job
+a troop hands out. Get it from `req.rb show Eagle` before naming a position to a
+Scout.
 
 ## Troop conventions
 
-Read `TROOP-SETTINGS.md`'s "How the troop runs advancement" section before
-writing the plan — it has the SMC/BoR abbreviations, whether conferences and
-boards appear on the calendar, the per-meeting conference/board cap, sign-off
-authority, and any recurring sign-off event like "Saturday at the Shed." For a
+**Read all of `TROOP-SETTINGS.md` before writing the plan, not just one section.**
+Three of its sections change what the plan says, and two of them can silently
+invalidate output that otherwise looks right:
+
+- **"How the troop runs advancement"** — the SMC/BoR abbreviations, whether
+  conferences and boards appear on the calendar, the per-meeting cap, sign-off
+  authority, and any recurring sign-off event like "Saturday at the Shed."
+- **"Advancement Updates"** — requirement changes that postdate the 2025
+  printings. These override both the requirements book and the report's own
+  marks, and **no script can catch them**: `req.rb check` is silent when a badge
+  still exists but its rank status changed, and TroopMaster keeps printing the
+  old Eagle-required asterisk. Apply these by hand and say in the plan that you
+  did, naming the Scouts affected.
+- **"Scout Updates"** — per-Scout facts the report cannot know: a Scout who has
+  left the troop and must not appear in any answer, or work already finished that
+  the grid still shows as open. Check every name in the report against this
+  section before it reaches a to-do list.
+
+For a
 Target Eagle cohort the per-meeting cap is usually slack, not a constraint —
 say so plainly rather than padding the plan with throughput math that is not
 binding. `summary` reports the eventual load and the ready-now load separately
@@ -307,7 +346,9 @@ Suggested shape:
 10. **Notes on the source data** — the Star SM Conf defect, anything the parse
     could not resolve, and any figure that is an estimate.
 
-Write plans to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report.
+Write plans to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report. Write
+the file directly — `plans/` is gitignored and already present, and the Write
+tool creates the directory anyway, so there is no `mkdir` step.
 
 Three things to keep honest: label projected advancement counts as estimates;
 when a Scout cannot realistically make the next court of honor, say so and give
