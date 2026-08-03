@@ -13,7 +13,17 @@
 #   ruby scripts/tfc.rb summary REPORT.pdf
 #   ruby scripts/tfc.rb gaps    REPORT.pdf [--scout NAME] [--all-ranks]
 #   ruby scripts/tfc.rb batch   REPORT.pdf [--min N]
+#   ruby scripts/tfc.rb clocks  REPORT.pdf [--start DATE] [--test-date DATE]
+#   ruby scripts/tfc.rb banked  REPORT.pdf [--min N]
 #   ruby scripts/tfc.rb json    REPORT.pdf
+#
+# Every command takes `--exclude NAME` (repeatable) and `--json`.
+#
+# `--exclude` is applied AFTER the tally cross-check, never before. The report's
+# "Scouts Needing:" row counts every printed row, so filtering the roster first
+# would break the one check that stands between a misparse and a plausible-
+# looking plan. `verify` always sees the full grid; everything else sees the
+# roster. Do not reorder this.
 #
 # Needs `pdftotext` (poppler): brew install poppler
 
@@ -23,6 +33,7 @@ ENV["BUNDLE_GEMFILE"] ||= File.join(REPO_ROOT, "Gemfile")
 
 require "bundler/setup"
 
+require "date"
 require "json"
 require "open3"
 require "tempfile"
@@ -190,6 +201,39 @@ COLUMNS = RANKS.flat_map { |r| r[:reqs].keys.map { |c| "#{r[:prefix]} #{c}" } }.
 LABELS  = RANKS.flat_map { |r| r[:reqs].map { |c, t| ["#{r[:prefix]} #{c}", t] } }.to_h.freeze
 BY_PREFIX = RANKS.to_h { |r| [r[:prefix], r] }.freeze
 
+# Program work only — Scout Spirit, the conference and the board taken out.
+SKILL_REQS = RANKS.to_h { |r| [r[:prefix], r[:reqs].keys - r[:closing]] }.freeze
+
+# --------------------------------------------------------------------------
+# the fitness chain
+#
+# Most requirements can be done any time. These cannot: each link needs the
+# previous one *finished* before its clock starts, so a Scout advancing two
+# ranks in a season cannot overlap them. This is the structure only -- the
+# ordering and the elapsed time. What counts as practice, what has to be
+# recorded, and what "after" means are conditions on the requirement, and they
+# come from `scout-req`. Never plan from the labels here.
+#
+# 6a has no clock of its own; it is the test 6b and 6c measure against, so it
+# gates everything downstream without consuming days.
+# --------------------------------------------------------------------------
+FITNESS_CHAIN = [
+  { key: "Tfoot 6a",  short: "T6a",  days: 0 },
+  { key: "Tfoot 6b",  short: "T6b",  days: 30 },
+  { key: "Tfoot 6c",  short: "T6c",  days: 30 },
+  { key: "Second 7a", short: "2C7a", days: 28 },
+  { key: "First 8a",  short: "1C8a", days: 28 }
+].freeze
+
+# Which group a Scout falls in, keyed by the first link they have not finished.
+CLOCK_GROUPS = {
+  "Tfoot 6a" => ["A", "Tenderfoot 6a not yet recorded — the clock cannot start"],
+  "Tfoot 6b" => ["B", "6a done, the 30-day log is open"],
+  "Tfoot 6c" => ["B", "6a done, the 30-day log is open"],
+  "Second 7a" => ["C", "Tenderfoot 6c done, Second Class 7a open"],
+  "First 8a" => ["D", "Second Class 7a done, First Class 8a open"]
+}.freeze
+
 # Geometry, measured from the report and re-derived per file where possible.
 HEADER_MAX_W = 4.5      # a rotated header is narrow in x ...
 HEADER_MIN_H = 3.4      # ... and tall in y
@@ -258,9 +302,24 @@ end
 # the grid
 # --------------------------------------------------------------------------
 class Report
-  attr_reader :scouts, :tally, :placed, :dropped
+  attr_reader :scouts, :tally, :placed, :dropped, :excluded
+
+  # Scouts in scope for planning. `scouts` stays the full printed grid because
+  # `verify` has to match the report's own tally row, which counts everyone.
+  def roster = @scouts - excluded
+
+  # TROOP-SETTINGS.md "Scout Updates" names Scouts who have left the troop but
+  # are still printed on the report. They must not reach a plan, and every count
+  # in it has to be net of them -- so drop them here rather than by hand.
+  # Returns the patterns that matched nobody, for the caller to report.
+  def exclude!(patterns)
+    matches = patterns.to_h { |p| [p, @scouts.select { |s| s.name.downcase.include?(p.downcase) }] }
+    @excluded = matches.values.flatten.uniq
+    matches.select { |_, hits| hits.empty? }.keys
+  end
 
   def initialize(pdf_path)
+    @excluded = []
     words  = Extract.words(pdf_path)
     @cols  = Extract.header_columns(words)
     check_shape!
@@ -406,6 +465,55 @@ class Scout
   def skill_gaps(rank) = gaps(rank) - rank[:closing]
 
   def needs_meeting?(rank) = gaps(rank).intersect?(rank[:closing])
+
+  # Program work already signed in this rank. Above the working rank this is
+  # banked credit: real work the Scout cannot be awarded for until the ranks
+  # below it are earned, since they "must be earned in sequence".
+  def banked(rank)
+    SKILL_REQS[rank[:prefix]].count { |c| done?("#{rank[:prefix]} #{c}") }
+  end
+
+  def ranks_above(rank) = RANKS[(RANKS.index(rank) + 1)..] || []
+end
+
+# --------------------------------------------------------------------------
+# projecting the fitness chain
+# --------------------------------------------------------------------------
+module Clock
+  module_function
+
+  # The links a Scout still has to run, in order.
+  #
+  # Troop 400 reads Tenderfoot 6b ("keep track ... for at least 30 days") and 6c
+  # ("show improvement ... after practicing for 30 days") as the SAME 30 days, so
+  # both close together. The book does not settle it; TROOP-SETTINGS.md does.
+  # `--tenderfoot-6bc sequential` runs them back to back instead, for a troop
+  # that reads it the other way.
+  def steps(scout, shared:)
+    open = FITNESS_CHAIN.reject { |l| scout.done?(l[:key]) }
+    return open unless shared
+
+    b = open.index { |l| l[:key] == "Tfoot 6b" }
+    c = open.index { |l| l[:key] == "Tfoot 6c" }
+    return open unless b && c
+
+    open[0...b] + [{ key: "Tfoot 6b/6c", short: "T6b/6c", days: 30 }] + open[(c + 1)..]
+  end
+
+  # Walk the remaining links forward. 6a costs no days but cannot be counted
+  # before someone actually runs the test, so it moves the cursor to --test-date.
+  def project(steps, start:, test_date:)
+    cursor = start
+    steps.map do |step|
+      cursor = step[:days].zero? ? [test_date, cursor].max : cursor + step[:days]
+      { link: step[:short], done: cursor }
+    end
+  end
+
+  def group_of(scout)
+    first_open = FITNESS_CHAIN.find { |l| !scout.done?(l[:key]) }
+    first_open ? CLOCK_GROUPS[first_open[:key]] : nil
+  end
 end
 
 # --------------------------------------------------------------------------
@@ -436,7 +544,7 @@ module Render
   def summary(report)
     verify!(report, quiet: true)
     RANKS.each do |rank|
-      cohort = report.scouts.select { |s| s.working_rank == rank }
+      cohort = report.roster.select { |s| s.working_rank == rank }
       next if cohort.empty?
 
       puts "\n== Working on #{rank[:name]} (#{cohort.size}) =="
@@ -446,14 +554,14 @@ module Render
                     s.needs_meeting?(rank) ? "+ #{meeting_phrase(rank)}" : "")
       end
     end
-    smc = report.scouts.count(&:working_rank)
-    bor = report.scouts.count { |s| s.working_rank&.fetch(:board) }
+    smc = report.roster.count(&:working_rank)
+    bor = report.roster.count { |s| s.working_rank&.fetch(:board) }
     puts "\nConference / board load: #{smc} SMCs, #{bor} BoRs, #{smc + bor} encounters total."
   end
 
   def gaps(report, only: nil, all_ranks: false)
     verify!(report, quiet: true)
-    report.scouts.each do |s|
+    report.roster.each do |s|
       next if only && !s.name.downcase.include?(only.downcase)
 
       ranks = all_ranks ? RANKS : [s.working_rank].compact
@@ -472,7 +580,7 @@ module Render
   def batch(report, min: 2)
     verify!(report, quiet: true)
     RANKS.each do |rank|
-      cohort = report.scouts.select { |s| s.working_rank == rank }
+      cohort = report.roster.select { |s| s.working_rank == rank }
       next if cohort.empty?
 
       freq = Hash.new { |h, k| h[k] = [] }
@@ -488,9 +596,92 @@ module Render
     end
   end
 
+  # ---- clocks -------------------------------------------------------------
+
+  def clocks(report, opts)
+    verify!(report, quiet: true)
+    rows = clock_rows(report, opts)
+    return puts JSON.pretty_generate(rows) if opts[:json]
+
+    clock_header(opts)
+    rows.group_by { |r| r[:group] }.sort_by { |g, _| g.to_s }.each do |group, members|
+      next if group.nil?
+
+      puts "\n-- Group #{group}: #{members.first[:blocked_on]} (#{members.size}) --"
+      members.sort_by { |r| r[:scout] }.each do |r|
+        chain = r[:chain].map { |s| "#{s[:link]} #{s[:done]}" }.join(" -> ")
+        puts format("  %-20s %s", r[:scout], chain)
+      end
+    end
+    running = rows.count { |r| r[:group] }
+    puts "\n#{running} of #{rows.size} Scouts have an open fitness clock."
+  end
+
+  def clock_rows(report, opts)
+    report.roster.map do |s|
+      group, blocked = Clock.group_of(s)
+      steps = Clock.steps(s, shared: opts[:shared])
+      {
+        scout: s.name, group: group, blocked_on: blocked,
+        chain: Clock.project(steps, start: opts[:start], test_date: opts[:test_date])
+      }
+    end
+  end
+
+  def clock_header(opts)
+    puts "== Fitness chain =="
+    puts "   projected from #{opts[:start]}; Tenderfoot 6a assumed recorded #{opts[:test_date]}"
+    reading = opts[:shared] ? "ONE shared 30-day window" : "two consecutive 30-day windows"
+    puts "   6b/6c read as #{reading}"
+    puts "   Dates are elapsed time only. What counts as practice, and what has to"
+    puts "   be recorded, are conditions on the requirement -- get them from scout-req."
+  end
+
+  # ---- banked -------------------------------------------------------------
+
+  def banked(report, min: 1)
+    verify!(report, quiet: true)
+    rows = banked_rows(report, min)
+    puts "== Banked work above the working rank =="
+    puts "   Program work already signed in ranks the Scout cannot yet be awarded,"
+    puts "   because Scout through First Class \"must be earned in sequence\"."
+    puts "   A large number here is the highest-yield case in the report: a handful"
+    puts "   of items at the working rank converts all of it into rank."
+    rows.each do |r|
+      detail = r[:above].map { |a| "#{a[:rank]} #{a[:banked]}/#{a[:of]}" }.join(", ")
+      puts format("\n  %-20s working %-13s %2d left to clear it", r[:scout], r[:working_rank],
+                  r[:left])
+      puts format("  %-20s banked: %s  (%d total)", "", detail, r[:total])
+    end
+    puts "\n(none)" if rows.empty?
+  end
+
+  def banked_rows(report, min)
+    rows = report.roster.filter_map do |s|
+      rank = s.working_rank
+      next unless rank
+
+      above = banked_above(s, rank)
+      total = above.sum { |a| a[:banked] }
+      next if total < min
+
+      { scout: s.name, working_rank: rank[:name], left: s.skill_gaps(rank).size, above: above,
+        total: total }
+    end
+    rows.sort_by { |r| -r[:total] }
+  end
+
+  # How much program work is signed in each rank above this one.
+  def banked_above(scout, rank)
+    counts = scout.ranks_above(rank).map do |r|
+      { rank: r[:name], banked: scout.banked(r), of: SKILL_REQS[r[:prefix]].size }
+    end
+    counts.reject { |a| a[:banked].zero? }
+  end
+
   def json(report)
     puts JSON.pretty_generate(
-      report.scouts.map do |s|
+      report.roster.map do |s|
         rank = s.working_rank
         {
           name: s.name, awarded: s.awarded,
@@ -515,7 +706,20 @@ USAGE = <<~TEXT
     summary  REPORT.pdf                 cohorts, items left per Scout, total SMC/BoR load
     gaps     REPORT.pdf [--scout NAME]  what each Scout still needs [--all-ranks]
     batch    REPORT.pdf [--min N]       requirements several Scouts need at once (default 2)
+    clocks   REPORT.pdf                 where each Scout sits on the fitness chain,
+                                        and the earliest date each link can close
+    banked   REPORT.pdf [--min N]       work already signed above the working rank (default 1)
     json     REPORT.pdf                 the whole parse, for further analysis
+
+  every command:
+    --exclude NAME    drop a Scout from the roster (repeatable); applied after
+                      `verify`, so the tally cross-check still sees the full grid
+
+  clocks only:
+    --start DATE            when the logs begin (default: today)
+    --test-date DATE        when Tenderfoot 6a gets recorded (default: --start)
+    --tenderfoot-6bc WHICH  `shared` (default, Troop 400) or `sequential`
+    --json                  machine-readable projection
 TEXT
 
 command = ARGV.shift
@@ -527,11 +731,41 @@ def flag(name, default = nil)
   i ? ARGV[i + 1] : default
 end
 
+def flags(name)
+  ARGV.each_index.select { |i| ARGV[i] == name }.filter_map { |i| ARGV[i + 1] }
+end
+
+def date_flag(name, default)
+  raw = flag(name)
+  raw ? Date.parse(raw) : default
+rescue Date::Error
+  abort "error: #{name} is not a date I can read: #{raw}"
+end
+
 begin
   report = Report.new(path)
 rescue RuntimeError => e
   abort "error: #{e.message}"
 end
+
+# A pattern that matches nobody is a note, not an error: once TroopMaster catches
+# up, the --exclude that was essential last month matches nothing this month, and
+# that must not stop a run.
+report.exclude!(flags("--exclude")).each do |missed|
+  warn %(note: --exclude "#{missed}" matched no Scout in this report)
+end
+unless report.excluded.empty?
+  warn "note: #{report.excluded.size} of #{report.scouts.size} Scouts excluded; " \
+       "#{report.roster.size} in scope."
+end
+
+start = date_flag("--start", Date.today)
+clock_opts = {
+  start: start,
+  test_date: date_flag("--test-date", start),
+  shared: flag("--tenderfoot-6bc", "shared") != "sequential",
+  json: ARGV.include?("--json")
+}
 
 case command
 when "verify"  then Render.verify!(report)
@@ -539,6 +773,8 @@ when "summary" then Render.summary(report)
 when "gaps"
   Render.gaps(report, only: flag("--scout"), all_ranks: ARGV.include?("--all-ranks"))
 when "batch"   then Render.batch(report, min: flag("--min", "2").to_i)
+when "clocks"  then Render.clocks(report, clock_opts)
+when "banked"  then Render.banked(report, min: flag("--min", "1").to_i)
 when "json"    then Render.json(report)
 else abort USAGE
 end

@@ -9,10 +9,11 @@ Build an advancement plan for the Scouts in a TroopMaster **Target First Class**
 report — the ones working toward Scout, Tenderfoot, Second Class, and First Class.
 
 The report says what is *done*. The plan's job is to say what to *do*, in what
-order, on which dates. Most of the value is in three things the grid does not
-state: which requirements have a calendar clock attached, which ones many Scouts
-need at once, and whether the conference and board load fits in the meetings
-available.
+order, on which dates. Most of the value is in four things the grid does not
+state: which requirements have a calendar clock attached (`clocks`), who is
+sitting on a pile of work behind an unearned rank (`banked`), which requirements
+many Scouts need at once (`batch`), and whether the conference and board load
+fits in the meetings available (`summary`).
 
 ## Tool
 
@@ -24,14 +25,46 @@ ruby scripts/tfc.rb verify  REPORT.pdf                 # parse check — run thi
 ruby scripts/tfc.rb summary REPORT.pdf                 # cohorts, items left, SMC/BoR load
 ruby scripts/tfc.rb gaps    REPORT.pdf [--scout NAME] [--all-ranks]
 ruby scripts/tfc.rb batch   REPORT.pdf [--min N]       # requirements several Scouts share
+ruby scripts/tfc.rb clocks  REPORT.pdf [--start DATE] [--test-date DATE]
+ruby scripts/tfc.rb banked  REPORT.pdf [--min N]       # work signed above the working rank
 ruby scripts/tfc.rb json    REPORT.pdf                 # whole parse, for ad-hoc analysis
 ```
+
+Every command takes `--exclude NAME` (repeatable) and `--json`.
 
 **Always run `verify` first, and never report numbers from a parse that failed
 it.** The report prints its own "Scouts Needing:" tally under every column; the
 script recomputes those counts from the grid it built and compares all 121. That
 cross-check is the only thing standing between a plausible-looking plan and a
 wrong one.
+
+**Then run `clocks` and `banked` before you decide what the plan is about.**
+Those two commands answer the questions in §1 and §2 below, and they are where
+the findings that change a leader's week almost always come from. They exist so
+that analysis is versioned, linted, and reproducible instead of re-derived by
+hand from `json` on every run — a mistyped column key there produces a wrong plan
+that `verify` cannot catch, because `verify` checks the parse, not the analysis.
+
+Reach for `json` only for a question these commands genuinely do not answer.
+
+### Before anything else: exclude Scouts who have left
+
+Read **"Scout Updates"** in `TROOP-SETTINGS.md` and pass `--exclude` for every
+Scout named there as having left the troop. TroopMaster keeps printing them, and
+they must not reach a plan or any count in it:
+
+```
+ruby scripts/tfc.rb summary REPORT.pdf --exclude "Lastname"
+```
+
+Pass the same `--exclude` flags to every command in the run, so the cohort sizes,
+the SMC/BoR totals, and the batch counts all agree. The script prints a stderr
+note telling you how many rows it dropped and how many are in scope; put that
+count in the plan without naming anyone.
+
+`--exclude` is applied *after* the tally cross-check, so `verify` still sees the
+full printed grid. A pattern that matches nobody is a note, not an error — once
+TroopMaster catches up, last month's essential `--exclude` matches nothing.
 
 ### Facts about the report the script depends on
 
@@ -63,9 +96,18 @@ worked on simultaneously; however, these ranks must be earned in sequence"
 (*Guide to Advancement 2025*, 4.2.0.1, printed p. 18) — so a Scout can have a
 pile of First Class requirements signed and still be blocked behind Scout rank.
 
-**Look for exactly that.** A Scout with many requirements banked above an
-unearned rank is the highest-yield case in any report: a handful of easy items
-converts a large amount of invisible work into a rank.
+**Look for exactly that** — `banked` is the command:
+
+```
+ruby scripts/tfc.rb banked REPORT.pdf --min 5
+```
+
+It lists, for every Scout, the program work already signed in each rank *above*
+the one they are working on, sorted by how much. A Scout with a large number
+there is the highest-yield case in any report: a handful of easy items at the
+working rank converts a large amount of invisible work into a rank. Lead the plan
+with those Scouts, and chain them against `clocks` (below) to say which ranks
+they can realistically reach and by when.
 
 ### 2. Find the time-clocked requirements first
 
@@ -85,9 +127,33 @@ Each link needs the previous one finished, so a Scout advancing two ranks in a
 season cannot overlap them, and a Scout missing 6a is a step further back than
 they look.
 
-**This table is a pointer, not requirement text.** The conditions on each link —
-what counts as practice, what has to be recorded, what "after" means — are what
-decide whether a Scout can actually make a date. Get them before you plan:
+**Do not work this out by hand.** `clocks` holds the same chain as data, sorts
+every Scout onto it, and projects the earliest date each remaining link can
+close:
+
+```
+ruby scripts/tfc.rb clocks REPORT.pdf --start 2026-08-03 --test-date 2026-08-08
+```
+
+- `--start` is when the logs begin — normally the first meeting after the plan
+  lands, not the report date.
+- `--test-date` is when Tenderfoot 6a actually gets recorded, for the Scouts who
+  have not taken it. Usually a Saturday at the Shed. Everything downstream of it
+  moves with this date, which is why that twenty-minute test is worth naming in
+  the plan.
+- `--tenderfoot-6bc sequential` if the troop reads 6b and 6c as two consecutive
+  30-day windows. Troop 400 reads them as one shared window (the default); that
+  is settled in `TROOP-SETTINGS.md`, not in the book.
+
+**Read the output against the calendar.** Compare each group's earliest date to
+the next court of honor. A cohort that misses it by a week is the most useful
+thing in the plan, and the least recoverable — say so plainly, and give the date
+they *can* make.
+
+**The table above is a pointer, not requirement text, and so is `clocks`.** The
+script models elapsed time and ordering only. The conditions on each link — what
+counts as practice, what has to be recorded, what "after" means — are what decide
+whether a Scout can actually make a date. Get them before you plan:
 
 ```
 ruby ../scout-req/scripts/req.rb show tenderfoot
@@ -95,9 +161,11 @@ ruby ../scout-req/scripts/req.rb show "second class"
 ruby ../scout-req/scripts/req.rb show "first class"
 ```
 
-Other requirements to check for schedule dependence: swim tests (needs an
-aquatics opportunity), orienteering courses, service projects, and anything
-naming a specific number of days or activities.
+The conferences have their own ordering, which `clocks` does not model:
+Tenderfoot 10 requires Scout requirement 7, Second Class 11 requires Tenderfoot
+10, and First Class 12 requires Second Class 11. A Scout earning three ranks in a
+season needs three conferences in that order — they cannot be collapsed into one
+night.
 
 ### 3. Find what many Scouts need at once
 
@@ -132,8 +200,10 @@ invalidate output that otherwise looks right:
   you did, naming the Scouts affected.
 - **"Scout Updates"** — per-Scout facts the report cannot know: a Scout who has
   left the troop and must not appear in any answer, or work already finished
-  that the grid still shows as open. Check every name in the report against this
-  section before it reaches a to-do list.
+  that the grid still shows as open. Departures go through `--exclude` (see
+  "Before anything else" above) so every count is net of them; the rest have to
+  be applied by hand. Check every name in the report against this section before
+  it reaches a to-do list.
 
 One thing that holds regardless of troop convention: committee members conduct
 boards of review and "may not test or pass Scouts on rank requirements" (*GTA*
@@ -146,6 +216,25 @@ sign-off crew for that meeting.
   a scheduled event, and flag requirements with *no* opportunity on the calendar
   (a swim test with no pool date is a Scout who cannot finish, and that is worth
   more to the reader than another to-do line).
+
+  **Run the gap sweep every time** — a missing date is invisible unless you look
+  for it, and no script will find it, because deciding whether an event supports
+  a requirement is a reading, not a lookup. Canoe camping serves First Class
+  6b/6c/6d and does *not* serve 6a. Search the feed for each of these and note
+  which return nothing:
+
+  | Search | Requirements that need it |
+  | :----- | :------------------------ |
+  | `swim`, `pool`, `aquatic` | First Class 6a, Second Class 5b/5c |
+  | `orient`, `compass`, `hike` | First Class 4a, Second Class 3a/3b |
+  | `shed` | every concentrated sign-off session — **count them; there may be one** |
+  | `camp` | Tenderfoot 1a/1b/2a–2c, Second Class 1a/1c/2a–2e, First Class 2a–2e |
+  | `service`, `cleanup`, `flag` | Tenderfoot 7b, Second Class 8a/8e, First Class 9d |
+
+  Search a year out, not just the planning window — "the next one is in January"
+  is the finding. Cross-check the count against the Scouts in `gaps` who need
+  each one, and put the blocked names in the leadership to-do list rather than in
+  a Scout's.
 - **guide-to-advancement** — get the policy, with citations. Use it for anything
   about sequence, sign-off authority, boards, or conferences.
 - **scout-req** — the requirement text itself, especially wherever a time period
@@ -179,7 +268,13 @@ Suggested shape:
 
 Write plans to `plans/target-first-class-YYYY-MM-DD.md`, dated from the report.
 
-Two things to keep honest: distinguish what the report states from what you are
-estimating (projected advancement counts are an estimate — label them), and when
-a Scout cannot realistically make the next court of honor, say so and give the
-date they can make instead.
+Three things to keep honest:
+
+- **Distinguish what the report states from what you are estimating.** Projected
+  advancement counts are an estimate — label them.
+- **Say when a Scout cannot realistically make the next court of honor,** and
+  give the date they can make instead.
+- **State the assumptions `clocks` ran on** — the `--start` and `--test-date` you
+  passed, and the 6b/6c reading. Every projected date in the plan moves with
+  them, so a reader who disagrees with the start date needs to know which numbers
+  to re-read.

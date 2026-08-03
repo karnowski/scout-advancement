@@ -113,7 +113,13 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
   `tzinfo`, and caches occurrences in `.cache/calendar.db` via `sqlite3`,
   re-syncing when the cache is over six hours old.
 - **`tfc.rb`** (target-first-class) — rebuilds a 25-row by 121-column grid of
-  rotated headers and single-glyph marks from `pdftotext -bbox` output.
+  rotated headers and single-glyph marks from `pdftotext -bbox` output. Its
+  `clocks` and `banked` subcommands carry the skill's two standing analyses —
+  where each Scout sits on the sequential fitness chain, and who has program work
+  signed above a rank they cannot yet be awarded — so those are not re-derived by
+  hand from `json` on every run. `--exclude NAME` drops Scouts who have left the
+  troop from every count; it applies *after* `verify`, so the tally cross-check
+  still sees the full printed grid.
 - **`te.rb`** (target-eagle) — the same for the Target Eagle grid, plus the
   Partial Merit Badges List via `pdftotext -layout`. Its `badges` subcommand
   prints the in-progress badge names one per line for `req.rb check` to read.
