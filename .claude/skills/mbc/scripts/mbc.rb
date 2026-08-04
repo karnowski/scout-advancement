@@ -417,13 +417,26 @@ module Query
     SQL
   end
 
+  # The report stores names the way it prints them, "Last, First", but nobody
+  # asks that way. Matching each word of the query separately makes the order
+  # irrelevant: "Jason Holmes", "Holmes, Jason", and "holmes jason" all land on
+  # the same person, while a bare "Holmes" still returns every Holmes — two of
+  # them in the 8/3/2026 report, which is exactly when the caller needs to see
+  # both rather than an arbitrary one.
+  #
+  # Deliberately not `normalize`: that drops "and"/"the" to match the book's
+  # badge abbreviations, a rule that has no business deciding what a person is
+  # called.
   def counselor(name)
-    rows = Store.query(<<~SQL, ["%#{name.downcase}%"])
+    words = name.to_s.downcase.scan(/[a-z0-9]+/)
+    return {} if words.empty?
+
+    rows = Store.query(<<~SQL, words.map { |word| "%#{word}%" })
       SELECT c.name, c.phone, c.phone_type, b.printed_name, b.book_name, b.eagle_required
         FROM counselors c
         JOIN counselor_badges cb ON cb.counselor_id = c.id
         JOIN badges b ON b.id = cb.badge_id
-       WHERE LOWER(c.name) LIKE ?
+       WHERE #{(['LOWER(c.name) LIKE ?'] * words.size).join(' AND ')}
        ORDER BY c.name, b.position
     SQL
     rows.group_by { |r| r["name"] }

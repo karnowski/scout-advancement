@@ -28,7 +28,7 @@ it.  Needs `pdftotext` (`brew install poppler`).
     ruby scripts/mbc.rb verify    [REPORT.pdf]      cross-check the parse — run this first
     ruby scripts/mbc.rb load      [REPORT.pdf] [--force]
     ruby scripts/mbc.rb who       BADGE [BADGE...]  who counsels this badge, if anyone
-    ruby scripts/mbc.rb counselor NAME              what one counselor covers
+    ruby scripts/mbc.rb counselor NAME              what a counselor covers
     ruby scripts/mbc.rb badges    [--eagle]         badges the troop covers
     ruby scripts/mbc.rb gaps      [--eagle]         badges with no counselor
     ruby scripts/mbc.rb roster                      every counselor, busiest first
@@ -56,6 +56,11 @@ Ask the user for the report if `reports/` has none.  It is TroopMaster's
   not tell a Scout the badge is unavailable.
 - **"is not a merit badge…"**  The name did not match the book *or* the report.
   Usually a misremembered name; the command suggests near matches.
+
+`counselor` takes a name in whatever order it was said — "Jason Holmes" and
+"Holmes, Jason" both work, though the report itself stores "Last, First".  A
+bare surname returns **everyone** who has it, and the troop currently has two
+Holmeses; when more than one person comes back, say so rather than picking one.
 
 `gaps --eagle` is the one to run unprompted when the conversation is about a
 Life Scout or an Eagle timeline.  It reports the **14 Eagle-required slots**,
