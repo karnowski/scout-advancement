@@ -49,6 +49,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/target-eagle/` — turns a TroopMaster "Target Eagle" report
   plus the matching "Partial Merit Badges List" into an advancement plan and
   to-do list for the Scouts working toward Star, Life, and Eagle.
+- `.claude/skills/mbc/` — answers who in the troop counsels a given merit badge,
+  from the TroopMaster "MBC Grouped By Badge" report, and which badges have no
+  counselor at all.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -84,7 +87,7 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Four of the five skills also need **`pdftotext`**, and `scout-req` additionally
+Five of the six skills also need **`pdftotext`**, and `scout-req` additionally
 needs **`pdftohtml`**. Both come from poppler, and neither is a gem, so
 `bundle install` alone leaves a fresh clone unable to run them:
 
@@ -123,6 +126,13 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
 - **`te.rb`** (target-eagle) — the same for the Target Eagle grid, plus the
   Partial Merit Badges List via `pdftotext -layout`. Its `badges` subcommand
   prints the in-progress badge names one per line for `req.rb check` to read.
+- **`mbc.rb`** (mbc) — parses the "MBC Grouped By Badge" report with
+  `pdftotext -layout` into `.cache/mbc.db`, and answers counselor lookups in
+  both directions.  The report lists only badges that *have* a counselor, so it
+  also loads the full badge list from `req.rb list --kind badge` — that is what
+  distinguishes "nobody counsels it" from "not a merit badge". `EAGLE_SLOTS`
+  carries the 14 Eagle-required slots as match keys, because a badge absent from
+  the report carries no Eagle star to read.
 - **`req.rb`** (scout-req) — indexes every rank, merit badge, and award in the
   requirements book by reading font sizes out of `pdftohtml -xml`, since the book
   numbers nothing and its headings are otherwise indistinguishable from body
@@ -134,7 +144,7 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the report(s)/book the script depends on"** for the two
+under "Facts about the report(s)/book the script depends on"** for the three
 TroopMaster skills and `scout-req`, and in **header and inline comments** in
 `gta.rb` and `calendar.rb`. `req.rb` carries a second copy in its own header,
 next to the code the facts constrain.
@@ -152,11 +162,14 @@ Two rules generalize across all of them:
   rank block below each Scout's printed rank is complete. `req.rb` reconciles
   its merit badge index against the requirements book's own Merit Badge Library
   page, and checks the badges run alphabetically under the right A–Z tab.
+  `mbc.rb` has no tally either, so it leans on what a *grouped* report
+  guarantees — every badge staffed, names alphabetical, each counselor's phone
+  identical everywhere, every phone-code line accounted for.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
-  grids, `-layout` for the partials list, plain `pdftotext` rather than the
-  `pdf-reader` gem for the Guide, and `pdftohtml -xml` alongside plain
-  `pdftotext` for the requirements book. Each is justified where it is used. Do
-  not swap one without re-measuring against the actual PDF.
+  grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
+  rather than the `pdf-reader` gem for the Guide, and `pdftohtml -xml` alongside
+  plain `pdftotext` for the requirements book.  Each is justified where it is
+  used.  Do not swap one without re-measuring against the actual PDF.
 
 ### `scout-req` is the only reader of the requirements book
 
@@ -176,8 +189,16 @@ matter:
 `target-eagle` runs that second line before it plans anything, because a
 TroopMaster report is exactly where a post-2025 badge enters unannounced.
 
+`mbc.rb` is the other consumer, and it uses `req.rb list --kind badge` rather
+than `check` — it needs the *whole* badge list, because "we have no counselor
+for that badge" and "that is not a badge" are different answers and only the
+book can tell them apart. `mbc` reports counselors, never requirement text, so
+it does not propagate exit 3; it prints a note on a badge the 2025 printing
+does not carry and says to get the requirements from scouting.org.
+
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
-`BLOCKS`, and `BADGE_PREREQS` in `te.rb` — are **match keys, not a second copy
+`BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb` — are
+**match keys, not a second copy
 of the book.** They exist so a parser can identify a column or find the Scouts on
 a clock. Their labels are far too short to plan from and are not maintained
 against the book; the text that governs comes from `scout-req`. Do not quote one

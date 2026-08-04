@@ -112,3 +112,22 @@ too, dates from `troop-calendar`, and policy from `guide-to-advancement`.
 
 Plans are written to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report
 they read.
+
+### `mbc`
+
+Answers **"do we have a counselor for this badge, and who is it?"** from the
+TroopMaster **MBC Grouped By Badge** report — the question that decides whether
+a Scout can start a badge this month or has to wait for the district to find
+someone.
+
+It parses the report into SQLite, then answers lookups in both directions: who
+counsels a badge, and what one counselor covers.  Because the report lists only
+badges that *have* a counselor, it reads the full badge list from `scout-req` at
+load time — that is what lets it tell "nobody in this troop counsels it" apart
+from "that is not a merit badge," which are very different things to tell a
+Scout.  `gaps --eagle` reports coverage of the 14 Eagle-required *slots*,
+counting the OR-groups correctly.
+
+The skill answers *who counsels*, never *what the requirements are*; requirement
+text comes from `scout-req`.  A badge can have a current counselor and still be
+one the 2025 printing cannot answer for.
