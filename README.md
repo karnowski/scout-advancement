@@ -131,3 +131,33 @@ counting the OR-groups correctly.
 The skill answers *who counsels*, never *what the requirements are*; requirement
 text comes from `scout-req`.  A badge can have a current counselor and still be
 one the 2025 printing cannot answer for.
+
+### `eagle-req`
+
+Answers questions about the **Eagle Scout service project** — what the proposal
+has to show, what the project plan is for and who (nobody) approves it, which
+fundraising needs a council application, what the report asks for, and who signs
+what in which order — from the _Eagle Scout Service Project Workbook_, No.
+512-927, revision 2023a (`references/EagleProjectWorkbook2023a.pdf`).
+
+This is the most-mythologized requirement in Scouting: "you need 100 hours," "it
+has to be construction," "the troop approves the plan," "you can't do it for a
+business."  All of those are wrong, and the workbook says so in as many words —
+so the skill quotes it, and cites the workbook's own page labels, the same way
+the workbook cites itself ("page B of the fundraising application").
+
+Getting there took some doing.  **This PDF's text layer is broken, and it fails
+silently**: eight of its eleven embedded Arial fonts carry an incomplete
+character map, so `pdftotext`, `pdftohtml`, and pdf-reader alike *delete*
+letters rather than garbling them.  Eagle Scout requirement 5 comes out of all
+of them as "W ile a i e Scout la evelo a give lea er i to ot er…" — still
+shaped like prose, still quotable, and wrong.  The skill reconstructs the
+missing letters from the glyph order the file's own character maps prove, and
+`verify` re-derives that proof from the PDF on every run and extracts the
+workbook a second time with the repair switched off, so the check reports what
+the repair is actually worth rather than only that nothing looks wrong.
+
+Because the workbook is February 2023 and reprints excerpts of the Guide to
+Advancement, the skill treats those blocks as summaries rather than as the
+policy: where the 2025 Guide and the 2023 workbook overlap, it reads
+`guide-to-advancement` and says which one governs.

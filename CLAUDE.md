@@ -52,6 +52,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/mbc/` — answers who in the troop counsels a given merit badge,
   from the TroopMaster "MBC Grouped By Badge" report, and which badges have no
   counselor at all.
+- `.claude/skills/eagle-req/` — answers Eagle Scout service project questions
+  (the proposal, plan, fundraising application, report, and approvals) from the
+  Eagle Scout Service Project Workbook 2023a.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -87,11 +90,15 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Five of the six skills also need **`pdftotext`**, and `scout-req` additionally
-needs **`pdftohtml`**. Both come from poppler, and neither is a gem, so
+Five of the seven skills also need **`pdftotext`**, and `scout-req` additionally
+needs **`pdftohtml`**.  Both come from poppler, and neither is a gem, so
 `bundle install` alone leaves a fresh clone unable to run them:
 
     brew install poppler
+
+`troop-calendar` and `eagle-req` need neither.  `eagle-req` in particular reads
+its PDF with the `pdf-reader` gem *because* poppler gets that file wrong; see
+below.
 
 Prefer a well-maintained gem over hand-rolling a parser for a standard format —
 iCalendar, RRULE, and PDF text extraction are all specified formats with edge
@@ -140,14 +147,23 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
   question needs requirements the 2025 printing does not carry; that status is
   the skill's whole reason for existing, so preserve it. `check` is the same
   guard over a list of names, silent unless one is a problem.
+- **`eagle.rb`** (eagle-req) — reads the Eagle Scout Service Project Workbook
+  with `pdf-reader` and **repairs the PDF's text layer as it goes**. Eight of the
+  workbook's eleven embedded Arial CID fonts carry an incomplete ToUnicode CMap,
+  so every off-the-shelf extractor silently *deletes* letters — Eagle Scout
+  requirement 5 comes out of `pdftotext` as "W ile a i e Scout la evelo a give
+  lea er i to ot er". `RepairedCMap` fills the holes from the glyph order the
+  file's own CMaps prove (`CID = ASCII − 29`), scoped to Arial Type0 fonts only.
+  Its `verify` re-derives that rule from the PDF and extracts the workbook a
+  second time with the repair off, to show what it is worth.
 
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
 under "Facts about the report(s)/book the script depends on"** for the three
-TroopMaster skills and `scout-req`, and in **header and inline comments** in
-`gta.rb` and `calendar.rb`. `req.rb` carries a second copy in its own header,
-next to the code the facts constrain.
+TroopMaster skills, `scout-req`, and `eagle-req`, and in **header and inline
+comments** in `gta.rb` and `calendar.rb`. `req.rb` and `eagle.rb` each carry a
+second copy in their own header, next to the code the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
@@ -164,12 +180,20 @@ Two rules generalize across all of them:
   page, and checks the badges run alphabetically under the right A–Z tab.
   `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
-  identical everywhere, every phone-code line accounted for.
+  identical everywhere, every phone-code line accounted for. `eagle.rb` has no
+  report structure to lean on at all, so it verifies the *decoding*: that the
+  glyph-order rule still holds across every CMap in the file, that no CID is
+  still being dropped, that the page labels it assigns match the footers the
+  pages print, and that ten canary passages — each destroyed without the repair
+  — survive it.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, and `pdftohtml -xml` alongside
   plain `pdftotext` for the requirements book.  Each is justified where it is
-  used.  Do not swap one without re-measuring against the actual PDF.
+  used.  Do not swap one without re-measuring against the actual PDF.  The Eagle
+  project workbook is the exception that proves it: **poppler cannot read that
+  file correctly at all**, which is why `eagle.rb` uses `pdf-reader` and decodes
+  the fonts itself.
 
 ### `scout-req` is the only reader of the requirements book
 
@@ -178,6 +202,16 @@ Reading it directly gets the text but not the guard: a merit badge introduced or
 revised after that printing produces a fluent, specific, correctly-cited, wrong
 answer, and there is nothing downstream that can catch it. Route requirement
 lookups through `scout-req`, which exits 3 instead.
+
+### `eagle-req` is the only reader of the Eagle project workbook
+
+Same rule, different failure. No other skill opens
+`references/EagleProjectWorkbook2023a.pdf`. Reading it with `pdftotext`, or with
+the Read tool's text path, returns prose with letters silently missing — it
+still looks quotable, and the missing letters change what the sentence says.
+Only `eagle.rb` repairs it. Reading a *page image* with the Read tool is fine,
+and is what the SKILL.md tells you to do for the two pages whose side-by-side
+boxes interleave.
 
 Skill directories are siblings, so a script calls another by relative path. Every
 script resolves its own paths from `__dir__`, so the working directory does not
@@ -218,6 +252,12 @@ rely on memory or general knowledge of Scouting requirements, which change yearl
   policy manual governing *how* advancement is administered (boards of review,
   procedures, roles). Use this for process and policy questions, via the
   `guide-to-advancement` skill.
+- `references/EagleProjectWorkbook2023a.pdf` — the Eagle Scout Service Project
+  Workbook, No. 512-927, revision 2023a: the four project forms and the
+  instructions around them. **Reach it through the `eagle-req` skill, never with
+  `pdftotext` or the Read tool's text path** (see above) — this PDF's text layer
+  drops letters without saying so. It is February 2023 and reprints excerpts of
+  the Guide; where the two overlap, the 2025 Guide governs.
 
 These are large PDFs (the Guide to Advancement is ~27 MB). Read specific page
 ranges rather than loading them whole.
