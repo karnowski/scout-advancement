@@ -21,7 +21,7 @@ ever be committed.  That covers:
 - **Commit messages, branch names, and PR descriptions** — summarize a change as
   "regenerate the Target Eagle plan", never by who is in it.
 
-`.gitignore` covers `plans/`, `reports/`, and every PDF outside `docs/`.  Treat
+`.gitignore` covers `plans/`, `reports/`, and every PDF outside `references/`.  Treat
 that as a backstop, not as permission to stop paying attention: never
 `git add -f` past it, and never paste report contents into a tracked file.  If a
 Scout's name has to appear in something committed — a test fixture, an example
@@ -33,7 +33,7 @@ plans and in answers to the Advancement Chair; they just never reach git.
 ## Current state
 
 - `README.md` — statement of purpose and a catalog of the skills.
-- `docs/` — authoritative reference PDFs (see below).
+- `references/` — authoritative reference PDFs (see below).
 - `.claude/skills/guide-to-advancement/` — answers advancement policy and
   procedure questions by quoting the Guide to Advancement 2025 with section and
   printed-page citations.
@@ -173,7 +173,7 @@ Two rules generalize across all of them:
 
 ### `scout-req` is the only reader of the requirements book
 
-No other skill opens `docs/Scouts-BSA-Requirements-2025.pdf`, and none should.
+No other skill opens `references/Scouts-BSA-Requirements-2025.pdf`, and none should.
 Reading it directly gets the text but not the guard: a merit badge introduced or
 revised after that printing produces a fluent, specific, correctly-cited, wrong
 answer, and there is nothing downstream that can catch it. Route requirement
@@ -207,14 +207,14 @@ them.
 
 ## Reference documents (source of truth)
 
-Advancement logic must trace back to these official documents in `docs/`; do not
+Advancement logic must trace back to these official documents in `references/`; do not
 rely on memory or general knowledge of Scouting requirements, which change yearly:
 
-- `docs/Scouts-BSA-Requirements-2025.pdf` — the 2025 rank and merit badge
+- `references/Scouts-BSA-Requirements-2025.pdf` — the 2025 rank and merit badge
   requirements, *what* a Scout must do to advance. **Reach it through the
   `scout-req` skill, not by opening the file** (see above); that skill is what
   knows the 2025 printing's limits.
-- `docs/guide-to-advancement-2025.pdf` — the Guide to Advancement 2025, the
+- `references/guide-to-advancement-2025.pdf` — the Guide to Advancement 2025, the
   policy manual governing *how* advancement is administered (boards of review,
   procedures, roles). Use this for process and policy questions, via the
   `guide-to-advancement` skill.

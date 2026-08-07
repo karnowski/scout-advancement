@@ -5,7 +5,7 @@ ruby "3.4.5"
 # Local data storage — the troop-calendar occurrence cache.
 gem "sqlite3", "~> 2.9"
 
-# Read the advancement PDFs in docs/. Good on the single-column requirements
+# Read the advancement PDFs in references/. Good on the single-column requirements
 # book; guide-to-advancement still uses pdftotext, because pdf-reader interleaves
 # that PDF's two columns and drops the spaces inside its headings.
 gem "pdf-reader", "~> 2.15"

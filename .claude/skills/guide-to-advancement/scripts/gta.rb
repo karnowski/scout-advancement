@@ -3,7 +3,7 @@
 
 # Search and quote the Guide to Advancement 2025.
 #
-# Builds a cached, page-tagged text extraction of docs/guide-to-advancement-2025.pdf
+# Builds a cached, page-tagged text extraction of references/guide-to-advancement-2025.pdf
 # and lets you search it, pull a whole numbered section, or dump printed pages.
 #
 # Every location is reported two ways:
@@ -31,7 +31,7 @@ require "optparse"
 
 SKILL_DIR = File.expand_path("..", __dir__)
 REPO_ROOT = File.expand_path("../../..", SKILL_DIR)
-PDF = File.join(REPO_ROOT, "docs", "guide-to-advancement-2025.pdf")
+PDF = File.join(REPO_ROOT, "references", "guide-to-advancement-2025.pdf")
 CACHE = File.join(SKILL_DIR, ".cache")
 TEXT = File.join(CACHE, "pages.txt")
 SECTIONS = File.join(CACHE, "sections.json")
@@ -73,7 +73,7 @@ def extract_pages
   # position, which interleaves the two columns line by line, and it emits every
   # heading and contents entry without inter-word spaces ("8.0.1.1NotaRetestor"),
   # so HEADING_RE never matches and section titles are unrecoverable. pdf-reader
-  # is fine on docs/Scouts-BSA-Requirements-2025.pdf, which is single-column.
+  # is fine on references/Scouts-BSA-Requirements-2025.pdf, which is single-column.
   out, err, status = Open3.capture3("pdftotext", PDF, "-")
   die "pdftotext not found (brew install poppler)" if status.nil?
   die "pdftotext failed: #{err.strip}" unless status.success?

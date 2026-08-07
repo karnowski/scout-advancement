@@ -3,7 +3,7 @@
 
 #
 # scout-req -- read rank, merit badge, and award requirements out of
-# docs/Scouts-BSA-Requirements-2025.pdf.
+# references/Scouts-BSA-Requirements-2025.pdf.
 #
 # The book has no section numbers to cite, so entries are found structurally:
 # every rank, merit badge, and award heading in it is set in 21pt RockwellStd,
@@ -40,7 +40,7 @@ require "open3"
 require "optparse"
 require "rexml/document"
 
-PDF = File.join(REPO_ROOT, "docs", "Scouts-BSA-Requirements-2025.pdf")
+PDF = File.join(REPO_ROOT, "references", "Scouts-BSA-Requirements-2025.pdf")
 CACHE = File.join(SKILL_DIR, ".cache")
 TEXT = File.join(CACHE, "pages.txt")
 INDEX = File.join(CACHE, "index.json")
@@ -58,7 +58,7 @@ NEED_NEWER = 3
 PAGE_SEP = "\f"
 
 # --------------------------------------------------------------------------
-# EXTRACTION NOTES -- measured against docs/Scouts-BSA-Requirements-2025.pdf
+# EXTRACTION NOTES -- measured against references/Scouts-BSA-Requirements-2025.pdf
 # (Adobe InDesign 20.0, 308 pages). Each of these was established by getting it
 # wrong first; none is recoverable by reading the code alone.
 #
@@ -574,7 +574,7 @@ def print_entry(pages, data, index)
   print_entry_header(entry, data)
   print_entry_body(pages, data, index)
   puts "Source: #{BOOK_LABEL}, effective Jan. 1, #{BOOK_YEAR} " \
-       "(docs/#{File.basename(PDF)}), printed p.#{entry[:printed_page]}."
+       "(references/#{File.basename(PDF)}), printed p.#{entry[:printed_page]}."
 end
 
 def print_entry_header(entry, data)

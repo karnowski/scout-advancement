@@ -27,7 +27,7 @@ alternative requirements, advancement for members with special needs, and
 unit/district/council roles.
 
 Every answer comes from the text of the _Guide to Advancement 2025_
-(`docs/guide-to-advancement-2025.pdf`), never from memory: the skill quotes the
+(`references/guide-to-advancement-2025.pdf`), never from memory: the skill quotes the
 supporting passage verbatim and cites the Guide's own section number, section
 title, and printed page (e.g. *8.0.1.1 "Not a Retest or 'Examination'", printed
 p. 55*).  It also preserves the Guide's distinction between **must** (mandated),
@@ -38,7 +38,7 @@ points to the local district or council advancement chair rather than guessing.
 ### `scout-req`
 
 Looks up the official text of a rank, merit badge, or award requirement in
-_Scouts BSA Requirements 2025_ (`docs/Scouts-BSA-Requirements-2025.pdf`) — *what*
+_Scouts BSA Requirements 2025_ (`references/Scouts-BSA-Requirements-2025.pdf`) — *what*
 a Scout must do, as distinct from the `guide-to-advancement` skill's *how* it is
 administered.  It indexes all 9 ranks, 139 merit badges, and 26 awards, searches
 requirement text, and quotes it verbatim with the printed page and the year.

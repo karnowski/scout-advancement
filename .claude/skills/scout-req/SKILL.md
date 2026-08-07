@@ -6,7 +6,7 @@ description: Look up the official text of a Scouts BSA rank, merit badge, or awa
 # Scouts BSA Requirements 2025
 
 Quote the official text of a rank, merit badge, or award requirement from
-`docs/Scouts-BSA-Requirements-2025.pdf` — the 2025 requirements book.
+`references/Scouts-BSA-Requirements-2025.pdf` — the 2025 requirements book.
 
 **Never answer a requirement question from memory.** Requirements are
 year-versioned and change every January; what you remember is a mixture of
@@ -151,7 +151,7 @@ on top of a requirement.
 
 ## Facts about the book the script depends on
 
-All verified against `docs/Scouts-BSA-Requirements-2025.pdf` (308 pages).
+All verified against `references/Scouts-BSA-Requirements-2025.pdf` (308 pages).
 
 - **Never trust a parse that fails `verify`.** This book has no section numbers
   and no tally to check against, so a heading the script missed does not surface

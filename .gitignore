@@ -1,4 +1,4 @@
-# Text extraction cache rebuilt from docs/ on demand.
+# Text extraction cache rebuilt from references/ on demand.
 .claude/skills/*/.cache/
 
 # This repository is public. Nothing naming a Scout may be committed.
@@ -6,7 +6,7 @@
 plans/
 reports/
 *.pdf
-!docs/*.pdf
+!references/*.pdf
 
 # Troop-specific settings; TROOP-SETTINGS.md.example is the checked-in template.
 TROOP-SETTINGS.md

@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Merit badges that docs/Scouts-BSA-Requirements-2025.pdf cannot answer for,",
+    "Merit badges that references/Scouts-BSA-Requirements-2025.pdf cannot answer for,",
     "because they were introduced, renamed, revised, or discontinued after that",
     "book went to print. req.rb consults this list on every `show` and exits 3",
     "with a banner when it hits one.",

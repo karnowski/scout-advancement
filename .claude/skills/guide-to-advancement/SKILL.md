@@ -6,7 +6,7 @@ description: Answer questions about how Scouting America (BSA) advancement is ad
 # Guide to Advancement 2025
 
 Answer advancement policy and procedure questions from the Guide to Advancement
-2025 (`docs/guide-to-advancement-2025.pdf`), quoting the text that supports the
+2025 (`references/guide-to-advancement-2025.pdf`), quoting the text that supports the
 answer and citing exactly where it comes from.
 
 **Never answer from memory.** Scouting requirements and procedures change yearly,
