@@ -38,8 +38,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
   procedure questions by quoting the Guide to Advancement 2025 with section and
   printed-page citations.
 - `.claude/skills/scout-req/` — looks up rank, merit badge, and award
-  requirement text in Scouts BSA Requirements 2025, and is deliberately loud
-  about any merit badge that printing cannot answer for.
+  requirement text in Scouts BSA Requirements 2025, layers on the merit badge
+  changes effective Jan. 1, 2026, and is deliberately loud about any badge
+  neither document can answer for.
 - `.claude/skills/troop-calendar/` — answers "what's on the schedule" questions
   from the troop's published iCal feed, and connects dates to advancement
   planning.
@@ -91,8 +92,10 @@ Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
 Five of the seven skills also need **`pdftotext`**, and `scout-req` additionally
-needs **`pdftohtml`**.  Both come from poppler, and neither is a gem, so
-`bundle install` alone leaves a fresh clone unable to run them:
+needs **`pdftohtml`** — the latter for `req.rb`; the sibling `changes.rb` needs
+only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.  Both
+come from poppler, and neither is a gem, so `bundle install` alone leaves a
+fresh clone unable to run them:
 
     brew install poppler
 
@@ -112,7 +115,8 @@ before anything else, so no `bundle exec` prefix is needed.
 
 ### Skill scripts
 
-Each skill is a single script under `.claude/skills/<skill>/scripts/`:
+Each skill has one script under `.claude/skills/<skill>/scripts/` — except
+`scout-req`, which has one per document it reads:
 
 - **`gta.rb`** (guide-to-advancement) — shells out to `pdftotext` to build a
   page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt on
@@ -144,9 +148,20 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
   requirements book by reading font sizes out of `pdftohtml -xml`, since the book
   numbers nothing and its headings are otherwise indistinguishable from body
   text. Body text comes from plain `pdftotext`. Exits `3` — not `1` — when a
-  question needs requirements the 2025 printing does not carry; that status is
-  the skill's whole reason for existing, so preserve it. `check` is the same
-  guard over a list of names, silent unless one is a problem.
+  question needs requirements **neither the 2025 printing nor the 2026 change
+  list** carries; that status is the skill's whole reason for existing, so
+  preserve it. A badge merely *changed* for 2026 does **not** exit 3 — `show`
+  prints the updated text after the 2025 entry and `check` prints a note,
+  because the skill can answer for it. `check` is the same guard over a list of
+  names, quiet unless something needs saying.
+- **`changes.rb`** (scout-req) — reads Scouting America's merit badge changes
+  effective Jan. 1, 2026 out of a 38-page three-column table. It takes the row
+  and column boundaries from the table's **drawn borders** rather than from the
+  text, because no text-based rule works: the gap between rows is *smaller* than
+  the gap inside one. `pdf-reader` supplies the rectangles and `pdftotext
+  -bbox-layout` the words. The decisive detail is that a border is **black**
+  while Word's cell shading is painted as hairline strips of the same width —
+  colour is the only thing that tells a boundary from a background.
 - **`eagle.rb`** (eagle-req) — reads the Eagle Scout Service Project Workbook
   with `pdf-reader` and **repairs the PDF's text layer as it goes**. Eight of the
   workbook's eleven embedded Arial CID fonts carry an incomplete ToUnicode CMap,
@@ -160,10 +175,11 @@ Each skill is a single script under `.claude/skills/<skill>/scripts/`:
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the report(s)/book the script depends on"** for the three
-TroopMaster skills, `scout-req`, and `eagle-req`, and in **header and inline
-comments** in `gta.rb` and `calendar.rb`. `req.rb` and `eagle.rb` each carry a
-second copy in their own header, next to the code the facts constrain.
+under "Facts about the ... the script depends on"** for the three
+TroopMaster skills, `scout-req` (which has one such section per document), and
+`eagle-req`, and in **header and inline comments** in `gta.rb` and `calendar.rb`.
+`req.rb`, `changes.rb`, and `eagle.rb` each carry a second copy in their own
+header, next to the code the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
@@ -178,7 +194,10 @@ Two rules generalize across all of them:
   rank block below each Scout's printed rank is complete. `req.rb` reconciles
   its merit badge index against the requirements book's own Merit Badge Library
   page, and checks the badges run alphabetically under the right A–Z tab.
-  `mbc.rb` has no tally either, so it leans on what a *grouped* report
+  `changes.rb` has no tally row, so it builds one: every word inside the table
+  must be claimed by exactly one row, every page's first row must be the
+  repeated column header, and every badge it names must resolve against
+  `req.rb list --kind badge`.  `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
   identical everywhere, every phone-code line accounted for. `eagle.rb` has no
   report structure to lean on at all, so it verifies the *decoding*: that the
@@ -188,20 +207,24 @@ Two rules generalize across all of them:
   — survive it.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
-  rather than the `pdf-reader` gem for the Guide, and `pdftohtml -xml` alongside
-  plain `pdftotext` for the requirements book.  Each is justified where it is
-  used.  Do not swap one without re-measuring against the actual PDF.  The Eagle
+  rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
+  plain `pdftotext` for the requirements book, and `-bbox-layout` for the 2026
+  change table, whose columns only coordinates can separate.  Each is justified
+  where it is used.  Do not swap one without re-measuring against the actual PDF.  The Eagle
   project workbook is the exception that proves it: **poppler cannot read that
   file correctly at all**, which is why `eagle.rb` uses `pdf-reader` and decodes
   the fonts itself.
 
-### `scout-req` is the only reader of the requirements book
+### `scout-req` is the only reader of the requirements book and the change list
 
-No other skill opens `references/Scouts-BSA-Requirements-2025.pdf`, and none should.
-Reading it directly gets the text but not the guard: a merit badge introduced or
-revised after that printing produces a fluent, specific, correctly-cited, wrong
-answer, and there is nothing downstream that can catch it. Route requirement
-lookups through `scout-req`, which exits 3 instead.
+No other skill opens `references/Scouts-BSA-Requirements-2025.pdf` or
+`references/Major-Requirement-Changes-as-of-1_1_2026.pdf`, and none should.
+Reading either directly gets the text but not the guard, and the two are only
+correct together: **65 of the book's 139 merit badges changed effective Jan. 1,
+2026**, so the book alone now gives a fluent, specific, correctly-cited, wrong
+answer for nearly half of them, and nothing downstream can catch it. Route
+requirement lookups through `scout-req`, which prints the 2026 text alongside
+the 2025 text and exits 3 when neither document carries the answer.
 
 ### `eagle-req` is the only reader of the Eagle project workbook
 
@@ -248,6 +271,13 @@ rely on memory or general knowledge of Scouting requirements, which change yearl
   requirements, *what* a Scout must do to advance. **Reach it through the
   `scout-req` skill, not by opening the file** (see above); that skill is what
   knows the 2025 printing's limits.
+- `references/Major-Requirement-Changes-as-of-1_1_2026.pdf` — Scouting America's
+  list of merit badge requirement changes effective Jan. 1, 2026, published
+  11/14/2025, with the updated text of each changed requirement beside the 2025
+  text it replaces. **Reach it through `scout-req` too.** It is the *major*
+  changes, not the 2026 requirements book, and it covers **merit badges only** —
+  no rank, no award — so it never licenses saying "everything else is
+  unchanged", and says nothing about whether ranks changed.
 - `references/guide-to-advancement-2025.pdf` — the Guide to Advancement 2025, the
   policy manual governing *how* advancement is administered (boards of review,
   procedures, roles). Use this for process and policy questions, via the

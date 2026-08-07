@@ -37,27 +37,38 @@ points to the local district or council advancement chair rather than guessing.
 
 ### `scout-req`
 
-Looks up the official text of a rank, merit badge, or award requirement in
-_Scouts BSA Requirements 2025_ (`references/Scouts-BSA-Requirements-2025.pdf`) — *what*
+Looks up the official text of a rank, merit badge, or award requirement — *what*
 a Scout must do, as distinct from the `guide-to-advancement` skill's *how* it is
-administered.  It indexes all 9 ranks, 139 merit badges, and 26 awards, searches
-requirement text, and quotes it verbatim with the printed page and the year.
-It is the only thing in this repository that reads the requirements book; the
-other skills call it rather than opening the PDF themselves.
+administered.  It reads two documents and never one alone:
+
+- _Scouts BSA Requirements 2025_
+  (`references/Scouts-BSA-Requirements-2025.pdf`), indexed down to all 9 ranks,
+  139 merit badges, and 26 awards;
+- _Major Requirement Changes as of 1/1/2026_
+  (`references/Major-Requirement-Changes-as-of-1_1_2026.pdf`), Scouting
+  America's change list published 11/14/2025.
+
+**65 of those 139 merit badges changed effective Jan. 1, 2026**, so the book on
+its own is now out of date for nearly half of them.  The change list carries the
+updated text of every changed requirement, and a lookup prints it after the 2025
+entry, each with the year and page it came from.  This is the only thing in the
+repository that reads either PDF; the other skills call it rather than opening
+them.
 
 Because the answer is only as good as the printing it came from, the skill is
-built to be **loud about anything the 2025 book cannot answer**.  A merit badge
-introduced, renamed, or revised after that printing gets a full-width banner and
-a distinct exit status rather than a fluent, well-cited, wrong answer — which is
-the only other thing that could happen, and is invisible once it reaches a Scout.
-Badges the book has never heard of are caught automatically; badges that are in
-the book but changed later are recorded by hand in
+built to be **loud about anything it cannot answer**.  There are exactly three
+outcomes: clean, changed-for-2026 (a flagged answer, with the new text), and a
+full-width banner plus a distinct exit status for a badge neither document
+covers.  What it never does is produce a fluent, well-cited, wrong answer —
+which is the only other thing that could happen, and is invisible once it
+reaches a Scout.  Badges the book has never heard of are caught automatically;
+badges introduced, renamed, or discontinued since are recorded by hand in
 `.claude/skills/scout-req/data/beyond-2025.json`.
 
 Because that check only helps if it actually gets run, it also comes in bulk: a
-`check` command takes a whole list of names, says nothing at all about the ones
-the book covers, and fails on the ones it does not.  `target-eagle` pipes every
-merit badge in a report through it before writing a plan.
+`check` command takes a whole list of names and says nothing at all about the
+ones that are clean.  `target-eagle` pipes every merit badge in a report through
+it before writing a plan.
 
 The parse checks itself against the book's own Merit Badge Library index before
 anything is quoted.
@@ -106,8 +117,8 @@ multi-week clock (Personal Management's 13-week budget, Personal Fitness's
 from a rank that has to be awarded before the next rank's clocks can start.
 
 Before any of that, it runs every merit badge named in the report through
-`scout-req`, so a badge whose requirements changed after the 2025 printing stops
-the plan instead of quietly shaping it.  Requirement text comes from `scout-req`
+`scout-req`, so a badge that changed for 2026 is planned from the 2026 text and
+one that neither document covers stops the plan instead of quietly shaping it.  Requirement text comes from `scout-req`
 too, dates from `troop-calendar`, and policy from `guide-to-advancement`.
 
 Plans are written to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report

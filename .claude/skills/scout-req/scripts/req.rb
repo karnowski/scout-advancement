@@ -22,8 +22,14 @@
 #   ruby scripts/req.rb verify
 #   ruby scripts/req.rb build [--force]
 #
-# Exit codes: 0 fine, 1 error, 3 the answer needs requirements this book does
-# not carry (see NEED_NEWER).
+# The book is the 2025 printing, and we are past it. `changes.rb`, beside this
+# script, carries Scouting America's published changes effective Jan. 1, 2026 --
+# 65 of the book's 139 merit badges, with the updated text. `show` and `check`
+# consult it and say so; neither treats a changed badge as unanswerable, because
+# the answer is right there. See the note above `cmd_check`.
+#
+# Exit codes: 0 fine, 1 error, 3 the answer needs requirements neither the book
+# nor the change list carries (see NEED_NEWER).
 #
 # Needs `pdftotext` and `pdftohtml` (both poppler): brew install poppler
 
@@ -38,6 +44,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "optparse"
+require "rbconfig"
 require "rexml/document"
 
 PDF = File.join(REPO_ROOT, "references", "Scouts-BSA-Requirements-2025.pdf")
@@ -50,6 +57,16 @@ BEYOND = File.join(SKILL_DIR, "data", "beyond-2025.json")
 # started after Dec. 31 of it is out of this book's scope.
 BOOK_YEAR = 2025
 BOOK_LABEL = "Scouts BSA Requirements #{BOOK_YEAR}".freeze
+
+# Scouting America's published change list against that book, read by the
+# sibling `changes.rb`. It carries the updated text of every requirement it
+# names, so a badge in it is one this skill *can* answer for -- which is why a
+# hit here is a loud note and not the exit 3 below.
+CHANGES_SCRIPT = File.join(__dir__, "changes.rb")
+CHANGES_INDEX = File.join(CACHE, "changes.json")
+CHANGES_PDF = File.join(REPO_ROOT, "references", "Major-Requirement-Changes-as-of-1_1_2026.pdf")
+CHANGES_YEAR = 2026
+CHANGES_EFFECTIVE = "Jan. 1, #{CHANGES_YEAR}".freeze
 
 # Exit status for "this needs requirements the 2025 book does not carry."
 # Distinct from 1 so the skill can tell a missing badge from a broken argument.
@@ -449,6 +466,55 @@ rescue JSON::ParserError => e
 end
 
 # --------------------------------------------------------------------------
+# the 2026 change list
+#
+# Read from `changes.rb`'s cache rather than parsed here -- that script owns the
+# change document, the way this one owns the book. The cache is read directly so
+# the common path costs no subprocess; `changes.rb` is only invoked when there
+# is nothing current to read.
+#
+# A missing change document is not a degraded mode, it is silence about the year
+# we are actually in, so it stops the command rather than warning.
+
+def load_changes
+  unless File.exist?(CHANGES_PDF)
+    die "missing #{CHANGES_PDF}\n#{' ' * 7}Without it this skill cannot tell you " \
+        "what changed for #{CHANGES_YEAR}."
+  end
+  build_changes unless File.exist?(CHANGES_INDEX) &&
+                       File.mtime(CHANGES_INDEX) >= File.mtime(CHANGES_PDF)
+  JSON.parse(File.read(CHANGES_INDEX), symbolize_names: true)
+rescue JSON::ParserError => e
+  die "#{CHANGES_INDEX} is not valid JSON (#{e.message}); " \
+      "try: ruby #{CHANGES_SCRIPT} build --force"
+end
+
+def build_changes
+  _, err, status = Open3.capture3(RbConfig.ruby, CHANGES_SCRIPT, "build")
+  return if status.success?
+
+  die "could not build the #{CHANGES_YEAR} change list " \
+      "(#{err.strip.split("\n").first})"
+end
+
+def changed_badge(changes, name)
+  target = normalize(name)
+  changes[:badges].find { |b| b[:norm] == target }
+end
+
+# The change table itself comes from `changes.rb show`, so there is only one
+# copy of the code that decides how a 2026 requirement is laid out beside the
+# 2025 one it replaces.
+def print_changes(name)
+  out, _, status = Open3.capture3(RbConfig.ruby, CHANGES_SCRIPT, "show", name)
+  return warn("warning: could not print the #{CHANGES_YEAR} changes for #{name}") unless
+    status.success?
+
+  puts
+  puts out
+end
+
+# --------------------------------------------------------------------------
 # the loud part
 #
 # The one thing this skill must never do quietly is answer a question about a
@@ -569,22 +635,31 @@ def page_body(pages, pdf_page, printed_page, from, to)
   lines[from..upper].reject { |l| l.strip == printed_page.to_s || l.strip.match?(/\A[A-Z]\z/) }
 end
 
-def print_entry(pages, data, index)
+def print_entry(pages, data, index, changed: nil)
   entry = data[:entries][index]
-  print_entry_header(entry, data)
+  print_entry_header(entry, data, changed)
   print_entry_body(pages, data, index)
   puts "Source: #{BOOK_LABEL}, effective Jan. 1, #{BOOK_YEAR} " \
        "(references/#{File.basename(PDF)}), printed p.#{entry[:printed_page]}."
+  return unless changed
+
+  puts "⚠ The text above is the #{BOOK_YEAR} printing. #{changed[:rows].size} of its " \
+       "requirements changed on #{CHANGES_EFFECTIVE}; the current text is below."
+  print_changes(entry[:name])
 end
 
-def print_entry_header(entry, data)
+def print_entry_header(entry, data, changed = nil)
   puts "=== #{entry[:title]} — #{KIND_LABEL[entry[:kind]]} — " \
        "printed p.#{entry[:printed_page]} / PDF p.#{entry[:pdf_page]}"
+  if changed
+    puts "    ⚠ #{changed[:rows].size} requirement(s) changed effective " \
+         "#{CHANGES_EFFECTIVE} — see the end of this entry"
+  end
   if entry[:pamphlet_year]
     puts "    Merit Badge Library: pamphlet requirements dated #{entry[:pamphlet_year]}"
   end
-  if (changed = data[:updates][entry[:name].to_sym])
-    puts "    Changed in the #{BOOK_YEAR} printing: requirements #{changed}"
+  if (updated = data[:updates][entry[:name].to_sym])
+    puts "    Changed in the #{BOOK_YEAR} printing: requirements #{updated}"
   end
   puts
 end
@@ -614,6 +689,14 @@ def parse_kind(value)
   KINDS.include?(kind) ? kind : die("unknown kind #{value.inspect} (#{KINDS.join(', ')})")
 end
 
+def announce_ambiguous(query, matches)
+  puts "\"#{query}\" matches #{matches.size} entries; name one exactly or pass --kind:"
+  matches.each do |e|
+    puts "  #{e[:name]}  (#{KIND_LABEL[e[:kind]]}, printed p.#{e[:printed_page]})"
+  end
+  exit 1
+end
+
 def cmd_show(argv)
   kind = nil
   parser = OptionParser.new do |o|
@@ -633,17 +716,12 @@ def cmd_show(argv)
     exit NEED_NEWER
   end
 
-  if matches.size > 1
-    puts "\"#{query}\" matches #{matches.size} entries; name one exactly or pass --kind:"
-    matches.each do |e|
-      puts "  #{e[:name]}  (#{KIND_LABEL[e[:kind]]}, printed p.#{e[:printed_page]})"
-    end
-    exit 1
-  end
+  announce_ambiguous(query, matches) if matches.size > 1
 
   entry = matches.first
+  changed = changed_badge(load_changes, entry[:name])
   announce_superseded(entry, beyond) if beyond
-  print_entry(pages, data, data[:entries].index(entry))
+  print_entry(pages, data, data[:entries].index(entry), changed: changed)
   exit NEED_NEWER if beyond
 end
 
@@ -657,6 +735,12 @@ end
 # Forty `show` calls printing forty full entries is a check nobody runs twice,
 # so this one prints nothing at all for a name the book covers cleanly. The only
 # output is the problem, and the exit status is still 3.
+#
+# A badge changed for #{CHANGES_YEAR} is *not* one of those problems. Its updated
+# text is right here in the change list, so the skill can answer for it; it gets
+# a note naming it and exit stays 0. Exiting 3 on all 65 of them would stop
+# target-eagle on half of a typical report over badges nothing is wrong with,
+# and an exit status that fires that often stops being read.
 
 def check_names(argv)
   named = argv.reject { |a| a.start_with?("-") }
@@ -698,11 +782,27 @@ def cmd_check(argv)
 
   _, data = load_book
   beyond = load_beyond
+  changes = load_changes
   flagged = names.count { |name| flagged?(data, beyond, name, kind: kind) }
+  changed = names.filter_map { |name| changed_badge(changes, name) }.uniq
 
+  report_changed(changed)
   puts "#{names.size} #{names.size == 1 ? 'name' : 'names'} checked, " \
-       "#{flagged} not in the #{BOOK_YEAR} book."
+       "#{flagged} the #{BOOK_YEAR} book cannot answer for, " \
+       "#{changed.size} changed for #{CHANGES_YEAR}."
   exit NEED_NEWER if flagged.positive?
+end
+
+def report_changed(changed)
+  return if changed.empty?
+
+  puts "note: #{changed.size} of these changed effective #{CHANGES_EFFECTIVE} — " \
+       "#{changed.map { |b| b[:name] }.join(', ')}."
+  puts "      The 2025 text alone is out of date for them. Get the updated " \
+       "requirements with"
+  puts "      `req.rb show NAME` or `changes.rb show NAME` before planning any " \
+       "Scout's work."
+  puts
 end
 
 def cmd_list(argv)
@@ -813,6 +913,9 @@ def cmd_page(argv)
   end
 end
 
+# This is the *2025 book's own* front-matter list of what it changed when it was
+# printed -- history, not news. What changed since is `changes.rb`, and the two
+# are easy to confuse, so every line here names the year it belongs to.
 def cmd_updates(argv)
   _, data = load_book
   query = argv.join(" ").strip
@@ -822,6 +925,8 @@ def cmd_updates(argv)
     puts "Merit badges whose requirements changed in the #{BOOK_YEAR} printing:\n\n"
     updates.each { |name, reqs| puts format("  %-30s %s", name, reqs) }
     puts "\n(#{updates.size} badges)"
+    puts "\nThis is what the #{BOOK_YEAR} printing changed. For what changed " \
+         "since, effective\n#{CHANGES_EFFECTIVE}: ruby #{File.basename(CHANGES_SCRIPT)} list"
     return
   end
 
@@ -831,6 +936,14 @@ def cmd_updates(argv)
   else
     puts "#{query}: no requirement changes listed in the #{BOOK_YEAR} printing."
   end
+  report_updates_since(query)
+end
+
+def report_updates_since(query)
+  changed = changed_badge(load_changes, query) or return
+
+  puts "Since then: #{changed[:rows].size} requirement(s) changed effective " \
+       "#{CHANGES_EFFECTIVE} (#{changed[:rows].map { |r| r[:req] }.compact.join(', ')})."
 end
 
 # --------------------------------------------------------------------------
@@ -952,7 +1065,11 @@ USAGE = <<~TEXT.freeze
     verify                                check the parse — run this first
     build [--force]                       (re)build the cache
 
-  Exit 3 means the answer needs requirements this #{BOOK_YEAR} book does not carry.
+  `show` and `check` also report what changed effective #{CHANGES_EFFECTIVE}; the
+  updated text of those requirements is in changes.rb, beside this script.
+
+  Exit 3 means the answer needs requirements neither this #{BOOK_YEAR} book nor the
+  #{CHANGES_YEAR} change list carries.
 TEXT
 
 argv = ARGV.dup
