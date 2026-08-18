@@ -59,11 +59,14 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/badge-inventory/` — answers how many rank patches, rank pins,
   position patches, awards, and merit badge patches the troop has on hand, from
   the troop's badge inventory Google Sheet.
+- `.claude/skills/coh-shopping-list/` — turns a TroopMaster "Court Of Honor"
+  report into a Scout Shop order, subtracting what the troop already holds.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
-  `<skill>-YYYY-MM-DD.md`, dated from the report they read, with an optional
-  `-SCOPE` suffix when a run covers a subset rather than the whole report
+  `<skill>-YYYY-MM-DD.md` (`coh-shopping-list-2026-08-17.md`), dated from the
+  report they read, with an optional `-SCOPE` suffix when a run covers a subset
+  rather than the whole report
   (`target-first-class-2026-08-01-seals.md` is the Seals patrol).  Two runs of
   the same scope on the same report overwrite; don't invent `-backup` names.
 
@@ -94,7 +97,7 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Five of the eight skills also need **`pdftotext`**, and `scout-req` additionally
+Six of the nine skills also need **`pdftotext`**, and `scout-req` additionally
 needs **`pdftohtml`** — the latter for `req.rb`; the sibling `changes.rb` needs
 only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.  Both
 come from poppler, and neither is a gem, so `bundle install` alone leaves a
@@ -179,6 +182,21 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   file's own CMaps prove (`CID = ASCII − 29`), scoped to Arial Type0 fonts only.
   Its `verify` re-derives that rule from the PDF and extracts the workbook a
   second time with the repair off, to show what it is worth.
+- **`coh.rb`** (coh-shopping-list) — parses the Court Of Honor report with
+  `pdftotext -layout` and subtracts the counts `inventory.rb` reports. The
+  report's Awards Summary is two columns of items separated by nothing but the
+  column gap, and **Special Awards is the one section with no item code**, so
+  the sections are split on runs of spaces and sliced by three or by two
+  accordingly. Everything else follows from the troop distributing on two
+  clocks: rank and position patches go out the day they are earned, so a rank in
+  the report calls for two *pins* and never a patch, and rank stock is rebuilt
+  against the `RANK_BANDS` min/max rather than against the report. Because a
+  patch that left the box before its row was counted is still counted,
+  `rank_stock` subtracts any award dated after `Last Checked`. Every list it
+  prints is ordered by one `Item#sort_key`: ranks lowest-to-highest via
+  `RANK_ORDER` (the report's two-column summary reads out in page order, not
+  advancement order), everything else grouped merit badges before awards and
+  alphabetical within each.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -191,11 +209,11 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the ... the script depends on"** for the three
+under "Facts about the ... the script depends on"** for the four
 TroopMaster skills, `scout-req` (which has one such section per document),
 `eagle-req`, and `badge-inventory`, and in **header and inline comments** in
-`gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`, `eagle.rb`, and
-`inventory.rb` each carry a second copy in their own header, next to the code
+`gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`, `eagle.rb`, `inventory.rb`,
+and `coh.rb` each carry a second copy in their own header, next to the code
 the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
@@ -214,7 +232,11 @@ Two rules generalize across all of them:
   `changes.rb` has no tally row, so it builds one: every word inside the table
   must be claimed by exactly one row, every page's first row must be the
   repeated column header, and every badge it names must resolve against
-  `req.rb list --kind badge`.  `mbc.rb` has no tally either, so it leans on what a *grouped* report
+  `req.rb list --kind badge`.  `coh.rb` is the one report that *does* print its
+  own tally, so it uses it three ways at once: each Awards Summary section's
+  declared total, the sum of that section's line items, and an independent
+  re-tally of the per-Scout detail pages must all agree, item by item.
+  `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
   identical everywhere, every phone-code line accounted for. `eagle.rb` has no
   report structure to lean on at all, so it verifies the *decoding*: that the
@@ -267,6 +289,12 @@ matter:
 
 `target-eagle` runs that second line before it plans anything, because a
 TroopMaster report is exactly where a post-2025 badge enters unannounced.
+
+`coh.rb` pipes `badges` through `req.rb check` for a different reason than
+`target-eagle` does: a patch does not change when its requirements do, so the
+2026 note is irrelevant to an order, but **exit 3 flags a badge the inventory
+sheet very likely has no row for** — a patch the troop may never have stocked,
+which would otherwise read as "not tracked" and be mistaken for a zero.
 
 `mbc.rb` and `inventory.rb` are the other consumers, and both use `req.rb list
 --kind badge` rather than `check` — they need the *whole* badge list, because

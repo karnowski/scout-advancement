@@ -10,3 +10,5 @@ reports/
 
 # Troop-specific settings; TROOP-SETTINGS.md.example is the checked-in template.
 TROOP-SETTINGS.md
+
+.DS_Store

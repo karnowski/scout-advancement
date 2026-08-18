@@ -174,6 +174,34 @@ Advancement, the skill treats those blocks as summaries rather than as the
 policy: where the 2025 Guide and the 2023 workbook overlap, it reads
 `guide-to-advancement` and says which one governs.
 
+### `coh-shopping-list`
+
+Turns a TroopMaster **Court Of Honor** report into a Scout Shop order: what the
+troop already holds, and what has to be bought before the ceremony.  It reads
+the report for what is being handed out and calls `badge-inventory` for what is
+in the box.
+
+The whole thing turns on the troop distributing on **two different clocks**.
+Rank patches and position patches are awarded the day they are earned, so by the
+time the report prints they are already on uniforms — those appear in the order
+as a *restock*, against the stock bands the troop keeps (7–10 of each rank up to
+First Class, 5–8 from Star up).  Merit badges, special awards, National Outdoor
+Awards, and **both** rank pins are held for the ceremony, so those are counted
+per Scout.  A rank in the report therefore means two pins to hand out, not a
+patch to buy — and an order that gets this backwards is wrong in both directions
+at once.
+
+Because a misparse of this report yields a slightly different order rather than
+an obvious error, `verify` leans on the report's own Awards Summary: each
+section's declared total, the summary's line items, and an independent re-tally
+of the per-Scout detail pages all have to agree.  It also reports, per rank,
+whether the inventory count was taken *after* the patches went out — a count
+from before a Scout ranked up still includes a patch that has already left the
+box.
+
+Orders are written to `plans/coh-shopping-list-YYYY-MM-DD.md`, dated from the
+report they read.
+
 ### `badge-inventory`
 
 Answers **"do we have one, and how many?"** — rank patches and rank pins,

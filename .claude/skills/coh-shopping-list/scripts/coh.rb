@@ -1,0 +1,731 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+#
+# coh-shopping-list — turn a TroopMaster "Court Of Honor" report into a Scout
+# Shop order, by subtracting what the troop already holds.
+#
+#   ruby scripts/coh.rb verify  REPORT.pdf
+#   ruby scripts/coh.rb badges  REPORT.pdf
+#   ruby scripts/coh.rb awards  REPORT.pdf
+#   ruby scripts/coh.rb restock REPORT.pdf
+#   ruby scripts/coh.rb order   REPORT.pdf
+#   ruby scripts/coh.rb notes   REPORT.pdf
+#   ruby scripts/coh.rb json    REPORT.pdf
+#
+# Inventory comes from the badge-inventory skill (`inventory.rb list --json`),
+# never from reading the spreadsheet here. Requirement text and the badge list
+# come from scout-req. This script owns exactly one thing: the arithmetic
+# between a report and a box of patches.
+#
+# --------------------------------------------------------------------------
+# Facts about the report and the troop's process this script depends on
+# --------------------------------------------------------------------------
+#
+# * **The troop distributes on two different clocks, and the whole order splits
+#   along that line.** Rank patches and position patches are handed over as soon
+#   as they are earned ("immediate"); merit badges, special awards, National
+#   Outdoor Awards, and both the youth and adult rank pins are held for the
+#   ceremony ("court of honor"). So a rank appearing in the report does **not**
+#   mean a rank patch must be bought for it — that patch left the box weeks ago.
+#   It means two *pins* are needed. Getting this backwards produces an order
+#   that is wrong in both directions at once: it buys rank patches nobody is
+#   waiting for and misses the pins that are actually short.
+#
+# * **The report carries its own tally, unlike the Target grids.** The last page
+#   is an "Awards Summary" whose section headers declare the totals ("15 Rank
+#   Badges", "107 Merit Badges"). `verify` checks three things against each
+#   other: the declared total, the summary's own line items, and an independent
+#   re-tally of the per-Scout detail pages. All three must agree. A layout
+#   misparse shows up as a number that is merely plausible, so this is not
+#   optional.
+#
+# * **The summary is two columns of items, and column boundaries are the only
+#   thing separating them.** A regex over the line will happily read
+#   "Citizenship In Nation* MB 10304 1 Metalwork MB" as one item name. Split on
+#   runs of two-or-more spaces instead and take the fields positionally.
+#
+# * **Special Awards have no item code; every other section does.** Rank,
+#   Merit Badge, and National Outdoor Award lines are (name, code, quantity)
+#   triples, Special Awards lines are (name, quantity) pairs. Slicing all four
+#   sections by three silently shifts the Special Awards quantities into the
+#   names.
+#
+# * **Detail lines only name their kind once.** The first entry under a Scout
+#   reads "Merit Badge:  Insect Study MB  07/10/26" and the rest are bare
+#   continuation lines. The parser carries the last-seen kind forward, and
+#   resets it at each Scout, so an unlabelled line is never orphaned.
+#
+# * **A rank's on-hand count is only usable if it was taken after the award.**
+#   Rank patches go out immediately, so a count from before a Scout ranked up
+#   still includes a patch that has since left the box. The sheet's own notes
+#   ("last awarded to ...") are the Advancement Chair recording exactly this.
+#   `effective_on_hand` subtracts any award dated after the row's Last Checked;
+#   in a healthy report that subtraction is zero, and `verify` says so per rank
+#   rather than assuming it.
+#
+# * **A count taken before this report's award period cannot reflect the last
+#   court of honor.** The period start is printed at the top of every page
+#   ("04/08/26 - 08/18/26"). Anything counted before that date is reported as
+#   unreliable rather than used — that is what catches the position patches,
+#   whose counts predate the spring ceremony by months.
+#
+# * **TroopMaster and the inventory sheet do not spell things alike.** Badge
+#   names carry a trailing " MB" and an "*" on the Eagle-required ones. Beyond
+#   that, `normalize` — which **must stay identical to `normalize` in
+#   `req.rb`, `mbc.rb`, and `inventory.rb`** — folds nearly everything: it drops
+#   "and"/"the", so "Citizenship In Nation*" meets "Citizenship in the Nation"
+#   and "Small Boat Sailing" meets "Small-Boat Sailing". Prefix matching in
+#   either direction closes the rest ("Fish and Wildlife" → "Fish and Wildlife
+#   Management", "Paul Bunyan Woodsman" → "Paul Bunyan"). Only the National
+#   Outdoor Awards need a hand-written alias: nothing folds "NOA - Hiking" into
+#   "National Outdoor Awards (Hiking)". Lookups are scoped to the tab that can
+#   hold the item, so a loose prefix cannot reach across into a different kind.
+#
+# * **An item absent from the sheet is not an item the troop lacks.** The sheet
+#   is a hand-kept inventory, not a catalogue — it has no row for the NOA gold
+#   device at all. That is reported as "not tracked", separately from a real
+#   zero, because only one of the two is a fact about the box.
+#
+# * **A blank count is not zero.** `inventory.rb` stores "nobody ever wrote a
+#   number here" as null. It is carried through as unknown.
+#
+# * **The report names Scouts on every page.** Nothing this script prints may
+#   reach a tracked file — see CLAUDE.md. `plans/` is gitignored and is where
+#   generated output belongs.
+
+SKILL_DIR = File.expand_path("..", __dir__)
+REPO_ROOT = File.expand_path("../../..", SKILL_DIR)
+ENV["BUNDLE_GEMFILE"] ||= File.join(REPO_ROOT, "Gemfile")
+
+require "bundler/setup"
+
+require "date"
+require "json"
+require "open3"
+require "rbconfig"
+
+INVENTORY_SCRIPT = File.join(REPO_ROOT, ".claude", "skills", "badge-inventory",
+                             "scripts", "inventory.rb")
+
+# Which tab of the inventory sheet can hold each kind of report line, and which
+# clock the troop distributes it on.
+KINDS = {
+  "Rank" => { label: "Rank Badges", tab: "Ranks",
+              section: 0, clock: :immediate },
+  "Merit Badge" => { label: "Merit Badges", tab: "Merit Badges",
+                     section: 0, clock: :court_of_honor },
+  "National Outdoor Awards" => { label: "National Outdoor Awards", tab: "Awards",
+                                 section: 0, clock: :court_of_honor },
+  "Special Awards" => { label: "Special Awards", tab: "Awards",
+                        section: 0, clock: :court_of_honor }
+}.freeze
+
+# Rank pins live in the Ranks tab's second block and are named off the rank.
+PIN_SECTION = 1
+PIN_KINDS = %w[Youth Adult].freeze
+
+# Ranks are always listed lowest to highest, never alphabetically and never in
+# whatever order a report happens to print them — the Awards Summary's two-column
+# layout reads out as Scout, First Class, Tenderfoot, Star, ..., which is the
+# order of the page rather than the order of advancement.
+RANK_ORDER = ["Scout", "Tenderfoot", "Second Class", "First Class",
+              "Star", "Life", "Eagle"].freeze
+
+# Everything else is listed merit badges first, then awards, each alphabetical.
+# Rank groups keep RANK_ORDER instead.
+GROUP_ORDER = ["Merit badge patches", "Awards", "Rank pins", "Rank patches"].freeze
+
+# How many of each rank patch the troop tries to keep on hand. Rank patches are
+# awarded the day they are earned, so the report cannot say what to buy — these
+# bands do. Below the low end, order back up to the high end; a band is a
+# min/max, not a target, so stock is not topped up on every trip.
+#
+# The split is by how fast a rank moves and how many Scouts are behind it: the
+# ranks up to First Class turn over faster and are kept deeper.
+RANK_BANDS = {
+  "Scout" => 7..10,
+  "Tenderfoot" => 7..10,
+  "Second Class" => 7..10,
+  "First Class" => 7..10,
+  "Star" => 5..8,
+  "Life" => 5..8,
+  "Eagle" => 5..8
+}.freeze
+
+# The one abbreviation no amount of folding will bridge: the report writes
+# "NOA - Hiking" where the sheet writes "National Outdoor Awards (Hiking)".
+# Expanding the leading token is general enough to cover a segment the troop
+# has not started tracking yet, which a hand-written alias table would not be.
+EXPANSIONS = { "noa" => "national outdoor awards" }.freeze
+
+IGNORED_WORDS = %w[and the].freeze
+
+# Must stay identical to `normalize` in req.rb, mbc.rb, and inventory.rb.
+def normalize(str)
+  str.to_s.downcase.gsub("&", " and ").gsub(/[^a-z0-9]+/, " ")
+     .split.reject { |word| IGNORED_WORDS.include?(word) }.join(" ")
+end
+
+def die(msg)
+  warn "error: #{msg}"
+  exit 1
+end
+
+# --------------------------------------------------------------------------
+# the report
+# --------------------------------------------------------------------------
+Entry = Struct.new(:scout, :kind, :name, :date, keyword_init: true)
+Line  = Struct.new(:kind, :name, :code, :qty, keyword_init: true)
+
+class Report
+  attr_reader :period_start, :period_end, :entries, :lines
+
+  NOISE  = /Page \d+|Court Of Honor|Awards Summary/
+  PERIOD = %r{\A\s*(\d\d/\d\d/\d\d) - (\d\d/\d\d/\d\d)\s*\z}
+  KIND   = Regexp.union(KINDS.keys)
+  DATED  = %r{\A\s*(?:(#{KIND}):)?\s*(\S.*?)\s{2,}(\d\d/\d\d/\d\d)\s*\z}
+  SCOUT  = /\A\s{0,4}(\S[^:]*,\s*\S.*?)\s*\z/
+
+  def initialize(path)
+    die "no such file: #{path}" unless File.exist?(path)
+    text = extract(path)
+    detail, @tail = text.split(/^& - Award earned prior.*$/, 2)
+    die "#{path}: no Awards Summary — is this a Court Of Honor report?" if @tail.nil?
+
+    @period_start, @period_end = read_period(text)
+    @entries = read_detail(detail)
+    @lines   = read_summary
+  end
+
+  def scouts = entries.map(&:scout).uniq
+
+  # The total the section header itself declares, e.g. "107 Merit Badges".
+  def declared(kind)
+    @tail[/^\s*(\d+) #{Regexp.escape(KINDS[kind][:label])}\s*$/, 1]&.to_i
+  end
+
+  def lines_for(kind) = lines.select { |l| l.kind == kind }
+
+  def entries_for(kind) = entries.select { |e| e.kind == kind }
+
+  # Latest date on which anything of this kind and name was earned.
+  def last_awarded(kind, name)
+    entries.select { |e| e.kind == kind && e.name == name }.map(&:date).max
+  end
+
+  private
+
+  def extract(path)
+    out, err, status = Open3.capture3("pdftotext", "-layout", path, "-")
+    die "pdftotext failed on #{path}: #{err.strip}" unless status.success?
+    out
+  end
+
+  def read_period(text)
+    m = text.lines.lazy.filter_map { |l| l.match(PERIOD) }.first
+    die "no award period line at the top of the report" if m.nil?
+    [parse_date(m[1]), parse_date(m[2])]
+  end
+
+  def parse_date(str)
+    Date.strptime(str, "%m/%d/%y")
+  rescue Date::Error
+    die "unparseable date #{str.inspect} in the report"
+  end
+
+  # A dated line inherits the last "Kind:" seen for this Scout; an undated
+  # "Last, First" line starts a new Scout and clears the kind.
+  def read_detail(detail)
+    scout = nil
+    kind = nil
+    detail.each_line.with_object([]) do |line, out|
+      next if line.strip.empty? || line.match?(NOISE) || line.match?(PERIOD)
+
+      if (m = line.match(DATED))
+        kind = m[1] if m[1]
+        die "dated line before any Scout: #{line.strip.inspect}" if scout.nil?
+        die "dated line before any kind: #{line.strip.inspect}" if kind.nil?
+        out << Entry.new(scout:, kind:, name: m[2].strip, date: parse_date(m[3]))
+      elsif (m = line.match(SCOUT))
+        scout = m[1]
+        kind = nil
+      else
+        die "unparsed detail line: #{line.strip.inspect}"
+      end
+    end
+  end
+
+  def read_summary
+    KINDS.each_key.flat_map do |kind|
+      body = @tail[/^\s*\d+ #{Regexp.escape(KINDS[kind][:label])}\s*$(.*?)(?:^\s*$|\z)/m, 1]
+      next [] if body.nil?
+
+      # Two columns of items; only the column gaps separate them, so split on
+      # runs of spaces and take the fields positionally.
+      fields = body.lines.flat_map { |l| l.strip.split(/\s{2,}/) }.reject(&:empty?)
+      coded = kind != "Special Awards"   # Special Awards carry no item code
+      fields.each_slice(coded ? 3 : 2).map do |name, a, b|
+        Line.new(kind:, name:, code: (a if coded), qty: (coded ? b : a).to_i)
+      end
+    end
+  end
+end
+
+# --------------------------------------------------------------------------
+# the inventory, via the badge-inventory skill
+# --------------------------------------------------------------------------
+module Inventory
+  module_function
+
+  def rows
+    @rows ||= begin
+      out, err, status = Open3.capture3(RbConfig.ruby, INVENTORY_SCRIPT, "list", "--json")
+      unless status.success?
+        die "badge-inventory could not list the sheet (#{err.strip.lines.first})"
+      end
+      JSON.parse(out)
+    end
+  end
+
+  # Scoped to the tab that can hold this kind of item, so a loose prefix match
+  # can never reach across into a different kind of patch.
+  def find(name, tab:, section: nil)
+    pool = rows.select { |r| r["category"] == tab }
+    pool = pool.select { |r| r["section_index"] == section } unless section.nil?
+
+    candidates(name).each do |n|
+      hit = pool.find { |r| r["norm"] == n } ||
+            pool.find { |r| r["norm"].start_with?(n) } ||
+            pool.find { |r| n.start_with?(r["norm"]) }
+      return hit if hit
+    end
+    nil
+  end
+
+  def candidates(name)
+    n = normalize(name)
+    head, rest = n.split(" ", 2)
+    [n, ([EXPANSIONS[head], rest].compact.join(" ") if EXPANSIONS.key?(head))].compact
+  end
+end
+
+# What the troop holds of one item, and how far that number can be trusted.
+class Stock
+  attr_reader :row, :spent_since_count
+
+  def initialize(row, spent_since_count: 0)
+    @row = row
+    @spent_since_count = spent_since_count
+  end
+
+  def tracked? = !row.nil?
+  def counted? = tracked? && !row["count"].nil?
+  def name = row&.fetch("name")
+
+  # What to call the item: the sheet's spelling once matched, since that is the
+  # name it is ordered and filed under. "Fish and Wildlife" on the report is
+  # "Fish and Wildlife Management" in the box.
+  def label_for(reported) = tracked? ? name : reported
+  def notes = row&.fetch("notes").to_s
+  def checked = counted? ? Date.parse(row["last_checked"]) : nil
+
+  # The count minus anything that left the box after the count was taken.
+  def on_hand = counted? ? row["count"] - spent_since_count : nil
+
+  def short(need) = counted? ? [need - on_hand, 0].max : need
+
+  def describe
+    return "not tracked on the inventory sheet" unless tracked?
+    return "count is blank — never recorded" unless counted?
+
+    s = "checked #{row['last_checked']}"
+    s += ", less #{spent_since_count} awarded after that count" if spent_since_count.positive?
+    s
+  end
+end
+
+# --------------------------------------------------------------------------
+# the order
+# --------------------------------------------------------------------------
+# `need` is how many the ceremony calls for; `band` is how many the troop keeps
+# on the shelf. An item has one or the other, never both — that is exactly the
+# difference between the two distribution clocks.
+Item = Struct.new(:group, :reported, :need, :stock, :band, :rank, :pin, keyword_init: true) do
+  def label = stock.label_for(reported)
+
+  # Group first, then rank order for anything rank-shaped, then alphabetically
+  # by the name it will actually be ordered under. One key, used everywhere a
+  # list of items is printed, so no two views can disagree.
+  def sort_key
+    [GROUP_ORDER.index(group) || GROUP_ORDER.size,
+     rank ? (RANK_ORDER.index(rank) || RANK_ORDER.size) : 0,
+     pin ? PIN_KINDS.index(pin) : 0,
+     label.downcase]
+  end
+
+  def zero_margin? = band.nil? && stock.counted? && stock.on_hand == need
+
+  def buy
+    return stock.short(need) if band.nil?
+    return 0 unless stock.counted?
+
+    stock.on_hand < band.min ? band.max - stock.on_hand : 0
+  end
+
+  # Why the line reads the way it does, for the restock table.
+  def verdict
+    return "unknown" unless stock.counted?
+    return "BUY #{buy}" if buy.positive?
+
+    stock.on_hand > band.max ? "ok (over)" : "ok"
+  end
+end
+
+class Plan
+  attr_reader :report
+
+  def initialize(report)
+    @report = report
+  end
+
+  # Held back for the ceremony: merit badges, awards, and both rank pins.
+  def court_of_honor_items
+    @court_of_honor_items ||= (badge_and_award_items + pin_items).sort_by(&:sort_key)
+  end
+
+  # Handed over on the day it was earned, so the box is rebuilt against the
+  # troop's stock bands. This covers every rank, including the ones nobody
+  # earned this period — a rank absent from the report can still be short.
+  def restock_items
+    @restock_items ||= RANK_BANDS.map do |rank, band|
+      die "RANK_BANDS names #{rank.inspect}, which is not in RANK_ORDER" unless
+        RANK_ORDER.include?(rank)
+
+      Item.new(group: "Rank patches", reported: rank, need: nil,
+               stock: rank_stock(rank), band:, rank:)
+    end.sort_by(&:sort_key)
+  end
+
+  # How many of this rank the report says went out; context for the table, not
+  # an input to the arithmetic.
+  def awarded(rank)
+    report.lines_for("Rank").find { |l| l.name == rank }&.qty || 0
+  end
+
+  def items = (court_of_honor_items + restock_items).sort_by(&:sort_key)
+
+  def buys = items.reject { |i| i.buy.zero? }
+
+  private
+
+  def badge_and_award_items
+    KINDS.select { |_, v| v[:clock] == :court_of_honor }.flat_map do |kind, cfg|
+      report.lines_for(kind).map do |line|
+        base = line.name.sub(/\s*\*?\s*MB\z/, "").strip
+        stock = Stock.new(Inventory.find(base, tab: cfg[:tab], section: cfg[:section]))
+        Item.new(group: kind == "Merit Badge" ? "Merit badge patches" : "Awards",
+                 reported: base, need: line.qty, stock:)
+      end
+    end
+  end
+
+  # One youth pin and one adult pin for every rank earned in the period.
+  def pin_items
+    report.lines_for("Rank").flat_map do |line|
+      PIN_KINDS.map do |who|
+        name = "#{line.name} #{who} Pin"
+        stock = Stock.new(Inventory.find(name, tab: "Ranks", section: PIN_SECTION))
+        Item.new(group: "Rank pins", reported: name, need: line.qty, stock:,
+                 rank: line.name, pin: who)
+      end
+    end
+  end
+
+  # A rank patch left the box the day it was earned, so any award dated after
+  # the physical count is not reflected in that count.
+  def rank_stock(rank)
+    row = Inventory.find(rank, tab: "Ranks", section: 0)
+    spent = 0
+    if row && row["last_checked"]
+      checked = Date.parse(row["last_checked"])
+      spent = report.entries_for("Rank").count { |e| e.name == rank && e.date > checked }
+    end
+    Stock.new(row, spent_since_count: spent)
+  end
+end
+
+# --------------------------------------------------------------------------
+# verification
+# --------------------------------------------------------------------------
+module Verify
+  module_function
+
+  # Three independent numbers per section must agree: the total the header
+  # declares, the sum of the summary's own line items, and a re-tally of the
+  # per-Scout detail pages.
+  def ok?(report)
+    problems = KINDS.each_key.flat_map { |kind| check_kind(report, kind) }
+    problems += check_unknown_kinds(report)
+    notes = rank_count_notes(report)
+
+    problems.each { |p| puts "FAIL: #{p}" }
+    notes.each { |n| puts "note: #{n}" }
+    if problems.empty?
+      puts "OK: #{report.scouts.size} Scouts, " \
+           "#{KINDS.each_key.map do |k|
+             "#{report.declared(k)} #{KINDS[k][:label].downcase}"
+           end.join(', ')}."
+    end
+    problems.empty?
+  end
+
+  def check_kind(report, kind)
+    declared = report.declared(kind)
+    return ["#{kind}: no section header in the Awards Summary"] if declared.nil?
+
+    lines = report.lines_for(kind)
+    detail = report.entries_for(kind)
+    problems = []
+    if lines.sum(&:qty) != declared
+      problems << "#{kind}: summary lines total #{lines.sum(&:qty)}, header declares #{declared}"
+    end
+    if detail.size != declared
+      problems << "#{kind}: detail pages hold #{detail.size} entries, header declares #{declared}"
+    end
+    problems + check_items(kind, lines, detail)
+  end
+
+  # Every summary line must match the detail pages item by item, not just in total.
+  def check_items(kind, lines, detail)
+    counted = detail.group_by(&:name).transform_values(&:size)
+    lines.filter_map do |line|
+      got = counted.delete(line.name)
+      "#{kind}: #{line.name} — summary #{line.qty}, detail #{got.inspect}" if got != line.qty
+    end + counted.map do |name, n|
+            "#{kind}: #{name} × #{n} on the detail pages but not in the summary"
+          end
+  end
+
+  def check_unknown_kinds(report)
+    (report.entries.map(&:kind).uniq - KINDS.keys)
+      .map { |k| "unrecognised award kind #{k.inspect} — this script would silently drop it" }
+  end
+
+  # Not failures: statements about how far each rank count can be trusted.
+  def rank_count_notes(report)
+    report.lines_for("Rank").sort_by { |l| RANK_ORDER.index(l.name) || RANK_ORDER.size }
+                            .filter_map do |line|
+      row = Inventory.find(line.name, tab: "Ranks", section: 0)
+      next "#{line.name}: no rank patch row on the inventory sheet" if row.nil?
+      next "#{line.name}: rank patch count is blank" if row["count"].nil?
+
+      checked = Date.parse(row["last_checked"])
+      last = report.last_awarded("Rank", line.name)
+      next if checked >= last
+
+      "#{line.name}: counted #{checked} but last awarded #{last} — " \
+        "the count predates the award, so on-hand is reduced accordingly"
+    end
+  end
+end
+
+# --------------------------------------------------------------------------
+# things worth saying out loud before ordering
+# --------------------------------------------------------------------------
+module Notes
+  module_function
+
+  def all(report, plan)
+    { "Awarded twice to the same Scout" => duplicates(report),
+      "Zero margin — need exactly equals stock" => zero_margin(plan),
+      "Not tracked on the inventory sheet" => untracked(plan),
+      "Counted before this award period began" => stale(report, plan) }
+  end
+
+  # The same award to the same Scout on two dates is almost always a double
+  # entry rather than a second award, and it inflates the order.
+  def duplicates(report)
+    report.entries.group_by { |e| [e.scout, e.kind, e.name] }
+                  .select { |_, es| es.size > 1 }
+                  .sort_by { |(scout, kind, name), _| [KINDS.keys.index(kind), name, scout] }
+                  .map do |(scout, _, name), es|
+      "#{name} × #{es.size} for #{scout} (#{es.map(&:date).join(', ')})"
+    end
+  end
+
+  def zero_margin(plan)
+    plan.court_of_honor_items.select(&:zero_margin?)
+        .map { |i| "#{i.label} — need #{i.need}, have #{i.stock.on_hand} (#{i.stock.describe})" }
+  end
+
+  def untracked(plan)
+    plan.items.reject { |i| i.stock.tracked? }.map { |i| "#{i.label} (need #{i.need})" }
+  end
+
+  # A count older than the period start cannot reflect the previous ceremony.
+  def stale(report, plan)
+    plan.items.select { |i| i.stock.counted? && i.stock.checked < report.period_start }
+              .map do |i|
+                "#{i.label} — counted #{i.stock.checked}, " \
+                  "period opened #{report.period_start}"
+              end
+              .uniq
+  end
+end
+
+# --------------------------------------------------------------------------
+# rendering
+# --------------------------------------------------------------------------
+module Render
+  module_function
+
+  def header(report)
+    puts "Court of Honor report — award period #{report.period_start} to #{report.period_end}"
+    puts "#{report.scouts.size} Scouts."
+    puts
+  end
+
+  def rows(items)
+    items.each do |i|
+      have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
+      puts format("  %<item>-36s need %<need>3d  have %<have>-3s buy %<buy>3d   %<why>s",
+                  item: i.label, need: i.need, have:, buy: i.buy, why: i.stock.describe)
+    end
+  end
+
+  def awards(report, plan, banner: true)
+    header(report) if banner
+    puts "== To award at the Court of Honor =="
+    puts "(merit badges, awards, and both rank pins are held back for the ceremony)"
+    plan.court_of_honor_items.group_by(&:group).each do |group, items|
+      puts "\n#{group} — #{items.sum(&:need)} to hand out, #{items.sum(&:buy)} to buy"
+      rows(items.reject { |i| i.buy.zero? })
+      covered = items.count { |i| i.buy.zero? }
+      if covered.positive?
+        puts "  (#{covered} line#{'s' unless covered == 1} covered by stock on hand)"
+      end
+    end
+  end
+
+  def restock(report, plan, banner: true)
+    header(report) if banner
+    puts "== Restock immediate-award stock =="
+    puts "(rank patches went out when they were earned; this rebuilds the box)"
+    puts "  keep #{describe_bands};"
+    puts "  below the low end, order back up to the high end.\n\n"
+    plan.restock_items.each do |i|
+      have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
+      puts format("  %<rank>-14s keep %<band>-6s awarded %<used>2d  on hand %<have>-4s %<verdict>s",
+                  rank: i.label, band: "#{i.band.min}-#{i.band.max}",
+                  used: plan.awarded(i.reported), have:, verdict: i.verdict)
+    end
+    puts "\n  Position patches are immediate-award too, but the troop keeps no " \
+         "target for them yet, so they are left out of this order."
+  end
+
+  # "7-10 of Scout/Tenderfoot/..., 5-8 of Star/Life/Eagle" — read off the bands
+  # themselves so the sentence cannot drift from the table under it.
+  def describe_bands
+    RANK_BANDS.sort_by { |rank, _| RANK_ORDER.index(rank) }
+              .group_by { |_, band| band }
+              .map { |band, pairs| "#{band.min}-#{band.max} of #{pairs.map(&:first).join('/')}" }
+              .join(", ")
+  end
+
+  def notes(report, plan)
+    Notes.all(report, plan).each do |title, list|
+      next if list.empty?
+
+      puts "\n== #{title} (#{list.size}) =="
+      list.each { |n| puts "  #{n}" }
+    end
+  end
+
+  def order(report, plan)
+    header(report)
+    awards(report, plan, banner: false)
+    puts
+    restock(report, plan, banner: false)
+    puts "\n== Shopping list =="
+    plan.buys.group_by(&:group).each do |group, items|
+      puts "\n#{group}:"
+      items.sort_by(&:sort_key)
+           .each do |i|
+        puts format("  %<item>-36s buy %<n>3d   (%<why>s)", item: i.label, n: i.buy,
+                                                            why: reason(i))
+      end
+    end
+    puts "\ntotal items to buy: #{plan.buys.sum(&:buy)}"
+    notes(report, plan)
+  end
+
+  # Why this line is on the order: a ceremony shortfall, or a shelf running low.
+  def reason(item)
+    have = item.stock.counted? ? item.stock.on_hand : "no count"
+    return "need #{item.need}, have #{have}" if item.band.nil?
+
+    "have #{have}, below the #{item.band.min}-#{item.band.max} kept on hand"
+  end
+
+  def badge_names(report)
+    report.lines_for("Merit Badge")
+          .map { |l| l.name.sub(/\s*\*?\s*MB\z/, "").strip }
+          .sort.uniq.each { |n| puts n }
+  end
+
+  def json(report, plan)
+    puts JSON.pretty_generate(
+      period: { start: report.period_start.to_s, end: report.period_end.to_s },
+      scouts: report.scouts.size,
+      items: plan.items.map do |i|
+        { group: i.group, item: i.label, need: i.need,
+          keep: i.band && { low: i.band.min, high: i.band.max },
+          on_hand: i.stock.on_hand, buy: i.buy,
+          tracked: i.stock.tracked?, last_checked: i.stock.checked&.to_s,
+          sheet_name: i.stock.name, notes: i.stock.notes }
+      end,
+      flags: Notes.all(report, plan).reject { |_, v| v.empty? }
+    )
+  end
+end
+
+# --------------------------------------------------------------------------
+# cli
+# --------------------------------------------------------------------------
+USAGE = <<~TEXT
+  usage: ruby scripts/coh.rb COMMAND REPORT.pdf [options]
+
+    verify   REPORT.pdf              cross-check the parse — run this first
+    badges   REPORT.pdf              merit badge names, one per line, for req.rb check
+    awards   REPORT.pdf              what gets handed out at the ceremony, and what is short
+    restock  REPORT.pdf              rebuild the immediate-award stock
+    order    REPORT.pdf              the whole Scout Shop order, plus what to check first
+    notes    REPORT.pdf              only the things worth checking before ordering
+    json     REPORT.pdf              the whole computation
+
+  `badges` is meant to be piped, and exit 3 there means stop and read the banner:
+      ruby scripts/coh.rb badges REPORT.pdf | ruby ../scout-req/scripts/req.rb check
+
+  How deep to keep each rank patch is the RANK_BANDS table at the top of this
+  file, not a flag — it is troop policy, and it belongs somewhere it can carry
+  a comment saying why.
+TEXT
+
+command = ARGV.shift
+path    = ARGV.shift
+abort USAGE if command.nil? || path.nil? || path.start_with?("--")
+
+report = Report.new(path)
+plan   = Plan.new(report)
+
+case command
+when "verify"  then exit(Verify.ok?(report) ? 0 : 1)
+when "badges"  then Render.badge_names(report)
+when "awards"  then Render.awards(report, plan)
+when "restock" then Render.restock(report, plan)
+when "order"   then Render.order(report, plan)
+when "notes"   then Render.notes(report, plan)
+when "json"    then Render.json(report, plan)
+else abort USAGE
+end
