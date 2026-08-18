@@ -56,6 +56,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/eagle-req/` — answers Eagle Scout service project questions
   (the proposal, plan, fundraising application, report, and approvals) from the
   Eagle Scout Service Project Workbook 2023a.
+- `.claude/skills/badge-inventory/` — answers how many rank patches, rank pins,
+  position patches, awards, and merit badge patches the troop has on hand, from
+  the troop's badge inventory Google Sheet.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -91,7 +94,7 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Five of the seven skills also need **`pdftotext`**, and `scout-req` additionally
+Five of the eight skills also need **`pdftotext`**, and `scout-req` additionally
 needs **`pdftohtml`** — the latter for `req.rb`; the sibling `changes.rb` needs
 only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.  Both
 come from poppler, and neither is a gem, so `bundle install` alone leaves a
@@ -99,15 +102,20 @@ fresh clone unable to run them:
 
     brew install poppler
 
-`troop-calendar` and `eagle-req` need neither.  `eagle-req` in particular reads
-its PDF with the `pdf-reader` gem *because* poppler gets that file wrong; see
-below.
+`troop-calendar`, `eagle-req`, and `badge-inventory` need neither.  `eagle-req`
+in particular reads its PDF with the `pdf-reader` gem *because* poppler gets
+that file wrong; see below.
 
 Prefer a well-maintained gem over hand-rolling a parser for a standard format —
-iCalendar, RRULE, and PDF text extraction are all specified formats with edge
-cases that are easy to get subtly wrong. Keep the dependency list short and
+iCalendar, RRULE, CSV, and PDF text extraction are all specified formats with
+edge cases that are easy to get subtly wrong. Keep the dependency list short and
 justified; add a gem when it removes real logic, not for convenience wrappers
 around one or two stdlib calls.
+
+**`rexml` and `csv` are bundled gems, not default ones**, so both must stay
+declared in the `Gemfile` — under `bundler/setup` an undeclared bundled gem
+fails to load outright, with a `LoadError` that reads like the gem is missing
+from the system.
 
 Scripts still run as `ruby scripts/<name>.rb` from the skill directory: each one
 sets `BUNDLE_GEMFILE` to the repo-root `Gemfile` and requires `bundler/setup`
@@ -171,15 +179,24 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   file's own CMaps prove (`CID = ASCII − 29`), scoped to Arial Type0 fonts only.
   Its `verify` re-derives that rule from the PDF and extracts the workbook a
   second time with the repair off, to show what it is worth.
+- **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
+  badge inventory Google Sheet as CSV over `net/http` and caches the rows in
+  `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
+  hours old. The sheet is link-shared, so no Google credentials are involved.
+  Two things about it are not guessable: the CSV endpoint takes a `gid` but
+  will not enumerate the tabs, so the tab names and gids are scraped from the
+  sheet's `/htmlview` page; and blank rows are *section breaks*, not
+  end-of-data, so a parser that stops at the first one drops every rank pin.
 
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
 under "Facts about the ... the script depends on"** for the three
-TroopMaster skills, `scout-req` (which has one such section per document), and
-`eagle-req`, and in **header and inline comments** in `gta.rb` and `calendar.rb`.
-`req.rb`, `changes.rb`, and `eagle.rb` each carry a second copy in their own
-header, next to the code the facts constrain.
+TroopMaster skills, `scout-req` (which has one such section per document),
+`eagle-req`, and `badge-inventory`, and in **header and inline comments** in
+`gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`, `eagle.rb`, and
+`inventory.rb` each carry a second copy in their own header, next to the code
+the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
@@ -204,7 +221,12 @@ Two rules generalize across all of them:
   glyph-order rule still holds across every CMap in the file, that no CID is
   still being dropped, that the page labels it assigns match the footers the
   pages print, and that ten canary passages — each destroyed without the repair
-  — survive it.
+  — survive it.  `inventory.rb` has no tally row either, so it leans on what a
+  hand-kept inventory guarantees: every row named, counted, and dated, no date
+  unparseable or in the future, no duplicate name within a tab, and every badge
+  in the book present on the Merit Badges tab via `req.rb list --kind badge`.
+  Post-2025 badges and absent rank/pin rows are reported as *notes*, not
+  failures — both are true facts about the troop rather than parse errors.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
@@ -246,12 +268,13 @@ matter:
 `target-eagle` runs that second line before it plans anything, because a
 TroopMaster report is exactly where a post-2025 badge enters unannounced.
 
-`mbc.rb` is the other consumer, and it uses `req.rb list --kind badge` rather
-than `check` — it needs the *whole* badge list, because "we have no counselor
-for that badge" and "that is not a badge" are different answers and only the
-book can tell them apart. `mbc` reports counselors, never requirement text, so
-it does not propagate exit 3; it prints a note on a badge the 2025 printing
-does not carry and says to get the requirements from scouting.org.
+`mbc.rb` and `inventory.rb` are the other consumers, and both use `req.rb list
+--kind badge` rather than `check` — they need the *whole* badge list, because
+"we have no counselor for that badge" / "we hold no patches for that badge" and
+"that is not a badge" are different answers, and only the book can tell them
+apart. Neither reports requirement text, so neither propagates exit 3; each
+prints a note on a badge the 2025 printing does not carry and says to get the
+requirements from scouting.org.
 
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb` — are
@@ -307,6 +330,11 @@ authority, recurring events) — live in `TROOP-SETTINGS.md`, not here.  That
 file is gitignored so a fork of this project doesn't accidentally commit
 another troop's details; `TROOP-SETTINGS.md.example` is the checked-in
 template.  Skills that need troop context should read `TROOP-SETTINGS.md`.
+
+It also holds the URLs of the troop's live data sources — the calendar feed and
+the badge inventory sheet — which is why it is where a skill looks for one
+rather than hard-coding it.  Both are read anonymously over plain HTTP, so both
+have to stay link-shared; neither skill has any credentials to fall back on.
 
 ## Technology Preferences
 

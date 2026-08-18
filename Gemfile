@@ -15,6 +15,11 @@ gem "pdf-reader", "~> 2.15"
 # Ruby 3.0, so it must be declared to survive `bundler/setup`.
 gem "rexml", "~> 3.4"
 
+# Parse the badge inventory sheet's CSV export. The Notes column contains quoted
+# commas and doubled quotes, so it needs a real CSV parser, not String#split.
+# A bundled gem since Ruby 3.4, so like rexml it must be declared here.
+gem "csv", "~> 3.3"
+
 # Parse the troop's iCal feed, expand its recurrence rules, and convert the
 # feed's UTC stamps to calendar-local time.
 gem "icalendar", "~> 2.12"

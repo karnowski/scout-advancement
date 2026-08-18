@@ -13,8 +13,9 @@ Claude skills to help the troop Advancement Chair and Scoutmasters communicate a
    ```
 
    Edit `TROOP-SETTINGS.md` with your troop's number, location, calendar feed
-   URL, patrols, and advancement conventions. `TROOP-SETTINGS.md` is gitignored,
-   so a fork of this project won't accidentally commit another troop's details.
+   URL, badge inventory sheet URL, patrols, and advancement conventions.
+   `TROOP-SETTINGS.md` is gitignored, so a fork of this project won't
+   accidentally commit another troop's details.
 3. Drop the TroopMaster reports any skills need into `reports/` (also gitignored).
 
 ## Skills
@@ -172,3 +173,27 @@ Because the workbook is February 2023 and reprints excerpts of the Guide to
 Advancement, the skill treats those blocks as summaries rather than as the
 policy: where the 2025 Guide and the 2023 workbook overlap, it reads
 `guide-to-advancement` and says which one governs.
+
+### `badge-inventory`
+
+Answers **"do we have one, and how many?"** — rank patches and rank pins,
+position-of-responsibility patches, awards, and merit badge patches — from the
+troop's badge inventory Google Sheet.  This is the question that decides whether
+a Scout gets their patch at the next court of honor or whether someone has to
+place a Scout Shop order first.
+
+It downloads every tab of the sheet as CSV and caches the rows in SQLite,
+re-syncing when the cache is over six hours old.  The sheet is shared as
+"anyone with the link can view", so there are no Google credentials involved.
+
+The interesting part is that **there are two dates and only one of them means
+the number is right**: when the script last downloaded the sheet, and when a
+human last opened the box and counted.  A count synced thirty seconds ago that
+was last physically counted in January is still a January count, so every
+answer prints the check date beside the number, and `stale` lists the rows
+nobody has recounted lately.
+
+Like `mbc`, it reconciles its merit badge tab against `scout-req` — the sheet
+runs ahead of the 2025 printing by three badges — and it reports inventory
+only.  What a badge requires still comes from `scout-req`, and who counsels it
+from `mbc`.

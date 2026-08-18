@@ -6,6 +6,16 @@ Troop <NUMBER> is a Scouting America troop in <CITY>, <STATE>.
 
     <https://calendar.google.com/calendar/ical/... or other published iCal feed URL>
 
+## Badge inventory sheet (`BADGE_INVENTORY_URL`)
+
+    <https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit>
+
+The Google Sheet tracking how many rank patches, pins, position patches, awards,
+and merit badge patches the troop has on hand.  It must be shared as "anyone
+with the link can view" — the `badge-inventory` skill reads it over plain HTTP
+with no Google credentials.  Each tab needs the columns `Count`, `Last Checked`,
+`Checked by`, and `Notes` after its own label column.
+
 ## Current Patrols (as of <YYYY-MM-DD>)
 
 | Patrol | Nickname | Notes |
