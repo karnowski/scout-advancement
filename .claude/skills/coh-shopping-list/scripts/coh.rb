@@ -575,53 +575,72 @@ module Notes
 end
 
 # --------------------------------------------------------------------------
-# rendering
+# rendering — Markdown, so `order` writes directly to a plans/*.md file
 # --------------------------------------------------------------------------
 module Render
   module_function
 
+  # Table cells are never free text a Scout typed, but a badge or rank name
+  # could in principle carry a literal "|" — escape it so one stray character
+  # can't tear the row apart.
+  def cell(str) = str.to_s.gsub("|", "\\|")
+
   def header(report)
-    puts "Court of Honor report — award period #{report.period_start} to #{report.period_end}"
-    puts "#{report.scouts.size} Scouts."
+    puts "# Court of Honor Shopping List"
+    puts
+    puts "- **Award period:** #{report.period_start} to #{report.period_end}"
+    puts "- **Scouts:** #{report.scouts.size}"
     puts
   end
 
-  def rows(items)
+  def item_table(items)
+    return if items.empty?
+
+    puts "| Item | Need | Have | Buy | Notes |"
+    puts "|---|---:|---:|---:|---|"
     items.each do |i|
       have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
-      puts format("  %<item>-36s need %<need>3d  have %<have>-3s buy %<buy>3d   %<why>s",
-                  item: i.label, need: i.need, have:, buy: i.buy, why: i.stock.describe)
+      puts "| #{cell(i.label)} | #{i.need} | #{have} | #{i.buy} | #{cell(i.stock.describe)} |"
     end
+    puts
   end
 
   def awards(report, plan, banner: true)
     header(report) if banner
-    puts "== To award at the Court of Honor =="
-    puts "(merit badges, awards, and both rank pins are held back for the ceremony)"
+    puts "## To award at the Court of Honor"
+    puts
+    puts "_Merit badges, awards, and both rank pins are held back for the ceremony._"
+    puts
     plan.court_of_honor_items.group_by(&:group).each do |group, items|
-      puts "\n#{group} — #{items.sum(&:need)} to hand out, #{items.sum(&:buy)} to buy"
-      rows(items.reject { |i| i.buy.zero? })
+      puts "### #{group} — #{items.sum(&:need)} to hand out, #{items.sum(&:buy)} to buy"
+      puts
+      item_table(items.reject { |i| i.buy.zero? })
       covered = items.count { |i| i.buy.zero? }
       if covered.positive?
-        puts "  (#{covered} line#{'s' unless covered == 1} covered by stock on hand)"
+        puts "_#{covered} line#{'s' unless covered == 1} covered by stock on hand._"
+        puts
       end
     end
   end
 
   def restock(report, plan, banner: true)
     header(report) if banner
-    puts "== Restock immediate-award stock =="
-    puts "(rank patches went out when they were earned; this rebuilds the box)"
-    puts "  keep #{describe_bands};"
-    puts "  below the low end, order back up to the high end.\n\n"
+    puts "## Restock immediate-award stock"
+    puts
+    puts "_Rank patches went out when they were earned; this rebuilds the box._"
+    puts
+    puts "Keep #{describe_bands}; below the low end, order back up to the high end."
+    puts
+    puts "| Rank | Keep | Awarded | On hand | Verdict |"
+    puts "|---|---|---:|---:|---|"
     plan.restock_items.each do |i|
       have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
-      puts format("  %<rank>-14s keep %<band>-6s awarded %<used>2d  on hand %<have>-4s %<verdict>s",
-                  rank: i.label, band: "#{i.band.min}-#{i.band.max}",
-                  used: plan.awarded(i.reported), have:, verdict: i.verdict)
+      puts "| #{cell(i.label)} | #{i.band.min}-#{i.band.max} | #{plan.awarded(i.reported)} " \
+           "| #{have} | #{cell(i.verdict)} |"
     end
-    puts "\n  Position patches are immediate-award too, but the troop keeps no " \
-         "target for them yet, so they are left out of this order."
+    puts
+    puts "_Position patches are immediate-award too, but the troop keeps no target for " \
+         "them yet, so they are left out of this order._"
   end
 
   # "7-10 of Scout/Tenderfoot/..., 5-8 of Star/Life/Eagle" — read off the bands
@@ -633,31 +652,37 @@ module Render
               .join(", ")
   end
 
-  def notes(report, plan)
+  def notes(report, plan, banner: true)
+    header(report) if banner
+    puts "## Notes"
+    puts
     Notes.all(report, plan).each do |title, list|
       next if list.empty?
 
-      puts "\n== #{title} (#{list.size}) =="
-      list.each { |n| puts "  #{n}" }
+      puts "### #{title} (#{list.size})"
+      puts
+      list.each { |n| puts "- #{n}" }
+      puts
     end
   end
 
   def order(report, plan)
     header(report)
     awards(report, plan, banner: false)
-    puts
     restock(report, plan, banner: false)
-    puts "\n== Shopping list =="
+    puts
+    puts "## Shopping list"
+    puts
     plan.buys.group_by(&:group).each do |group, items|
-      puts "\n#{group}:"
+      puts "### #{group}"
+      puts
       items.sort_by(&:sort_key)
-           .each do |i|
-        puts format("  %<item>-36s buy %<n>3d   (%<why>s)", item: i.label, n: i.buy,
-                                                            why: reason(i))
-      end
+           .each { |i| puts "- **#{i.label}** — buy #{i.buy} (#{reason(i)})" }
+      puts
     end
-    puts "\ntotal items to buy: #{plan.buys.sum(&:buy)}"
-    notes(report, plan)
+    puts "**Total items to buy: #{plan.buys.sum(&:buy)}**"
+    puts
+    notes(report, plan, banner: false)
   end
 
   # Why this line is on the order: a ceremony shortfall, or a shelf running low.
