@@ -74,6 +74,51 @@ inventory sheet either, so it will surface as "not tracked" rather than as a
 real count.  That is a patch the troop may have never stocked.  Say so plainly
 rather than reporting it as a zero.
 
+## The National Outdoor Award is three purchases, not one
+
+The award has up to three parts, and the Scout Shop sells them separately:
+
+1. The **pentagon-shaped base badge** — the "NOA badge", or "award center
+   emblem".  This is the award itself.
+2. One or more **segments** — Riding, Hiking, Camping, Aquatics, Adventure,
+   Conservation — sewn around the pentagon.
+3. Optional **gold and silver devices**, which are small **pins**, not patches.
+   One is added to a segment patch already on the uniform to mark further
+   experience on it.
+
+The report names two of the three:
+
+| The report says | It means |
+| :--- | :--- |
+| `NOA - Hiking`, under **National Outdoor Awards** | the Hiking segment patch |
+| `NOA Camping Gold`, under **Special Awards** | a gold device pin for the Camping segment |
+
+**It never names the pentagon**, because a Scout needs one only with their very
+first segment, and TroopMaster does not record it separately.  So the script
+infers it — **one pentagon per Scout who earned any segment in this period** —
+and that number is a **ceiling, not a count**.  A Scout who earned Hiking two
+years ago and Camping now needs no second pentagon, and nothing in this report
+can tell you which case you are looking at.
+
+**Say this out loud when you report the order.**  The pentagon line carries the
+caveat in its Notes column, and `notes` lists the Scouts by name under "Earned
+an NOA segment — check whether they already have the pentagon".  Hand the
+Advancement Chair that list: only each Scout's own advancement history settles
+it.  Carrying a spare pentagon is cheap and the troop stocks them, so the usual
+answer is "buy it if the box is low" — but the check before it is sewn on is
+theirs to make, not something to quietly skip.
+
+Two more things follow from how the parts work:
+
+- **A device does not imply a pentagon.**  A device goes on a segment the Scout
+  is already wearing, so only *segments* put a pentagon on the order.
+- **A gold device is the same pin whichever segment it goes on**, so all the
+  gold lines are added up and subtracted from one stock.  The order shows
+  `National Outdoor Awards (Gold Device)` — the sheet's own row — with the
+  segments it is destined for in the notes, rather than one line per segment.
+  Left separate, two needs of one against a stock of one would both come out
+  covered.
+
 ## Reading the answer
 
 - **Give the number, the item name as the *sheet* spells it, and the check
@@ -81,9 +126,9 @@ rather than reporting it as a zero.
   is what the item is ordered and filed under — the report's "Fish and Wildlife"
   is "Fish and Wildlife Management" in the box.
 - **"Not tracked" is not "we have none."**  The sheet is a hand-kept inventory,
-  not a catalogue.  It has no row at all for the NOA gold devices.  Report those
-  as untracked and let the Advancement Chair check, rather than ordering as if
-  the count were zero.
+  not a catalogue.  It has a row for the NOA gold device but none for the
+  silver.  Report anything untracked as untracked and let the Advancement Chair
+  check, rather than ordering as if the count were zero.
 - **A blank count is not zero either.**  Nobody ever wrote a number in that cell.
 - **Zero margin is worth saying out loud.**  Dozens of merit badge lines
   routinely come out at need exactly equals stock.  Anything that left the box
@@ -179,6 +224,12 @@ changing the parser.
   Sailing".  Prefix matching in either direction closes the rest.  Only the
   National Outdoor Awards need help: nothing folds "NOA - Hiking" into
   "National Outdoor Awards (Hiking)", so the leading `NOA` is expanded.
+- **A National Outdoor Award is up to three separate purchases**, and the report
+  names only two of them — see the section above.  A segment line
+  (`NOA - Hiking`) is a patch, a device line (`NOA Camping Gold`) is a pin, and
+  the pentagon is never printed at all.  `verify` rejects any `NOA` line that is
+  neither a known segment nor a gold/silver device, because such a line would
+  otherwise be priced as an ordinary award and skip the pentagon entirely.
 - **Lookups are scoped to the tab that can hold the item**, so a loose prefix
   cannot reach across into a different kind of patch — the Kayaking merit badge
   and the Kayaking BSA award are different rows on different tabs.

@@ -82,8 +82,24 @@
 #   "National Outdoor Awards (Hiking)". Lookups are scoped to the tab that can
 #   hold the item, so a loose prefix cannot reach across into a different kind.
 #
+# * **A National Outdoor Award is up to three separate purchases.** The
+#   pentagon-shaped base badge — the "award center emblem" — is the award
+#   itself; the segments (Riding, Hiking, Camping, Aquatics, Adventure,
+#   Conservation) are sewn around it; and the gold and silver devices are small
+#   pins added to a segment already on the uniform, for further experience. The
+#   report names segments ("NOA - Hiking", under National Outdoor Awards) and
+#   devices ("NOA Camping Gold", under Special Awards) but **never the
+#   pentagon**, because a Scout needs one only with their first segment ever
+#   and TroopMaster does not record it separately. So the pentagon is inferred,
+#   and can only be a ceiling: one per Scout who earned a segment in this
+#   period, flagged for the Advancement Chair to check against each Scout's own
+#   history. Every gold device is the same pin whatever segment it goes on, so
+#   the per-segment device lines are summed before they are subtracted from the
+#   one stock of devices — two lines each subtracted from a stock of one would
+#   both come out covered.
+#
 # * **An item absent from the sheet is not an item the troop lacks.** The sheet
-#   is a hand-kept inventory, not a catalogue — it has no row for the NOA gold
+#   is a hand-kept inventory, not a catalogue — it has no row for the NOA silver
 #   device at all. That is reported as "not tracked", separately from a real
 #   zero, because only one of the two is a fact about the box.
 #
@@ -158,6 +174,17 @@ RANK_BANDS = {
 # Expanding the leading token is general enough to cover a segment the troop
 # has not started tracking yet, which a hand-written alias table would not be.
 EXPANSIONS = { "noa" => "national outdoor awards" }.freeze
+
+# The National Outdoor Award is three things the Scout Shop sells separately,
+# and the report names only two of them. A segment line ("NOA - Hiking") is a
+# segment patch; a device line ("NOA Camping Gold") is a small gold or silver
+# pin added to a segment patch the Scout is already wearing. The pentagon base
+# badge goes with a Scout's *first* segment, and nothing in the report says
+# whether that has already happened — see `pentagon_items`.
+NOA_SEGMENTS = %w[Riding Hiking Camping Aquatics Adventure Conservation].freeze
+NOA_SEGMENT_LINE = /\ANOA\s*-\s*(#{Regexp.union(NOA_SEGMENTS)})\z/i
+NOA_DEVICE_LINE  = /\ANOA\s+(#{Regexp.union(NOA_SEGMENTS)})\s+(Gold|Silver)\z/i
+NOA_PENTAGON = "National Outdoor Awards (pentagon)"
 
 IGNORED_WORDS = %w[and the].freeze
 
@@ -351,7 +378,11 @@ end
 # `need` is how many the ceremony calls for; `band` is how many the troop keeps
 # on the shelf. An item has one or the other, never both — that is exactly the
 # difference between the two distribution clocks.
-Item = Struct.new(:group, :reported, :need, :stock, :band, :rank, :pin, keyword_init: true) do
+# `caveat` is what the arithmetic cannot settle on its own — the NOA pentagon
+# count is a ceiling, not a number. A line carrying one is printed even when
+# there is nothing to buy, because the caveat is the reason to look at it.
+Item = Struct.new(:group, :reported, :need, :stock, :band, :rank, :pin, :caveat,
+                  keyword_init: true) do
   def label = stock.label_for(reported)
 
   # Group first, then rank order for anything rank-shaped, then alphabetically
@@ -420,14 +451,50 @@ class Plan
   private
 
   def badge_and_award_items
-    KINDS.select { |_, v| v[:clock] == :court_of_honor }.flat_map do |kind, cfg|
-      report.lines_for(kind).map do |line|
-        base = line.name.sub(/\s*\*?\s*MB\z/, "").strip
-        stock = Stock.new(Inventory.find(base, tab: cfg[:tab], section: cfg[:section]))
-        Item.new(group: kind == "Merit Badge" ? "Merit badge patches" : "Awards",
-                 reported: base, need: line.qty, stock:)
-      end
+    pairs = KINDS.select { |_, v| v[:clock] == :court_of_honor }
+                 .flat_map { |kind, cfg| report.lines_for(kind).map { |l| [l, kind, cfg] } }
+    devices, plain = pairs.partition { |line, _, _| line.name.match?(NOA_DEVICE_LINE) }
+
+    plain.map do |line, kind, cfg|
+      base = line.name.sub(/\s*\*?\s*MB\z/, "").strip
+      stock = Stock.new(Inventory.find(base, tab: cfg[:tab], section: cfg[:section]))
+      Item.new(group: kind == "Merit Badge" ? "Merit badge patches" : "Awards",
+               reported: base, need: line.qty, stock:)
+    end + device_items(devices) + pentagon_items
+  end
+
+  # A gold device is the same pin whichever segment it goes on, so every
+  # segment's device lines draw on one stock and have to be added up before
+  # they are subtracted from it. Left as separate lines, two needs of one
+  # against a stock of one would both come out covered.
+  def device_items(pairs)
+    pairs.group_by { |line, _, _| line.name[NOA_DEVICE_LINE, 2].capitalize }
+         .map do |metal, group|
+      name = "National Outdoor Awards (#{metal} Device)"
+      qty = group.sum { |line, _, _| line.qty }
+      segments = group.map { |line, _, _| line.name[NOA_DEVICE_LINE, 1] }.uniq.sort
+      Item.new(group: "Awards", reported: name, need: qty,
+               stock: Stock.new(Inventory.find(name, tab: "Awards", section: 0)),
+               caveat: "pin#{'s' unless qty == 1} added to the " \
+                       "#{segments.join(', ')} segment#{'s' unless segments.one?} " \
+                       "already on the uniform")
     end
+  end
+
+  # A Scout needs the pentagon base badge with their *first* segment, and the
+  # report covers one award period — it cannot say whether a Scout earned a
+  # segment two years ago. So this is a ceiling, one per Scout who earned any
+  # segment this period, and it is flagged rather than quietly ordered:
+  # `Notes.noa_pentagons` names the Scouts whose history has to be checked.
+  def pentagon_items
+    scouts = report.entries.select { |e| e.name.match?(NOA_SEGMENT_LINE) }.map(&:scout).uniq
+    return [] if scouts.empty?
+
+    [Item.new(group: "Awards", reported: NOA_PENTAGON, need: scouts.size,
+              stock: Stock.new(Inventory.find(NOA_PENTAGON, tab: "Awards", section: 0)),
+              caveat: "at most one each for #{scouts.size} Scout" \
+                      "#{'s' unless scouts.one?} — check whether the pentagon " \
+                      "was already awarded for an earlier segment")]
   end
 
   # One youth pin and one adult pin for every rank earned in the period.
@@ -467,6 +534,7 @@ module Verify
   def ok?(report)
     problems = KINDS.each_key.flat_map { |kind| check_kind(report, kind) }
     problems += check_unknown_kinds(report)
+    problems += check_noa_names(report)
     notes = rank_count_notes(report)
 
     problems.each { |p| puts "FAIL: #{p}" }
@@ -512,6 +580,19 @@ module Verify
       .map { |k| "unrecognised award kind #{k.inspect} — this script would silently drop it" }
   end
 
+  # Every NOA line is a segment or a device, and the two are ordered as
+  # different things. A third shape means a segment name this script does not
+  # know, which would be priced as an ordinary award and skip the pentagon.
+  def check_noa_names(report)
+    names = (report.entries.map(&:name) + report.lines.map(&:name)).uniq
+    names.grep(/\ANOA\b/i)
+         .reject { |n| n.match?(NOA_SEGMENT_LINE) || n.match?(NOA_DEVICE_LINE) }
+         .map do |n|
+           "unrecognised National Outdoor Award line #{n.inspect} — " \
+             "neither a known segment nor a gold/silver device"
+         end
+  end
+
   # Not failures: statements about how far each rank count can be trusted.
   def rank_count_notes(report)
     report.lines_for("Rank").sort_by { |l| RANK_ORDER.index(l.name) || RANK_ORDER.size }
@@ -538,6 +619,8 @@ module Notes
 
   def all(report, plan)
     { "Awarded twice to the same Scout" => duplicates(report),
+      "Earned an NOA segment — check whether they already have the pentagon" =>
+        noa_pentagons(report),
       "Zero margin — need exactly equals stock" => zero_margin(plan),
       "Not tracked on the inventory sheet" => untracked(plan),
       "Counted before this award period began" => stale(report, plan) }
@@ -551,6 +634,17 @@ module Notes
                   .sort_by { |(scout, kind, name), _| [KINDS.keys.index(kind), name, scout] }
                   .map do |(scout, _, name), es|
       "#{name} × #{es.size} for #{scout} (#{es.map(&:date).join(', ')})"
+    end
+  end
+
+  # The pentagon goes with a Scout's first segment ever; this report covers one
+  # award period, so it can name the Scouts but never answer the question. The
+  # order carries a pentagon for each of them, and this is the list to check
+  # against their advancement histories before the trip to the Scout Shop.
+  def noa_pentagons(report)
+    report.entries.select { |e| e.name.match?(NOA_SEGMENT_LINE) }
+                  .group_by(&:scout).sort.map do |scout, es|
+      "#{scout} — #{es.map { |e| e.name[NOA_SEGMENT_LINE, 1] }.uniq.sort.join(', ')}"
     end
   end
 
@@ -600,7 +694,8 @@ module Render
     puts "|---|---:|---:|---:|---|"
     items.each do |i|
       have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
-      puts "| #{cell(i.label)} | #{i.need} | #{have} | #{i.buy} | #{cell(i.stock.describe)} |"
+      note = [i.stock.describe, i.caveat].compact.join("; ")
+      puts "| #{cell(i.label)} | #{i.need} | #{have} | #{i.buy} | #{cell(note)} |"
     end
     puts
   end
@@ -614,8 +709,11 @@ module Render
     plan.court_of_honor_items.group_by(&:group).each do |group, items|
       puts "### #{group} — #{items.sum(&:need)} to hand out, #{items.sum(&:buy)} to buy"
       puts
-      item_table(items.reject { |i| i.buy.zero? })
-      covered = items.count { |i| i.buy.zero? }
+      # A caveat is the reason to look at a line, so it is shown even when the
+      # arithmetic says there is nothing to buy.
+      shown = items.reject { |i| i.buy.zero? && i.caveat.nil? }
+      item_table(shown)
+      covered = items.size - shown.size
       if covered.positive?
         puts "_#{covered} line#{'s' unless covered == 1} covered by stock on hand._"
         puts
@@ -676,8 +774,9 @@ module Render
     plan.buys.group_by(&:group).each do |group, items|
       puts "### #{group}"
       puts
-      items.sort_by(&:sort_key)
-           .each { |i| puts "- **#{i.label}** — buy #{i.buy} (#{reason(i)})" }
+      items.sort_by(&:sort_key).each do |i|
+        puts "- **#{i.label}** — buy #{i.buy} (#{reason(i)})#{" — #{i.caveat}" if i.caveat}"
+      end
       puts
     end
     puts "**Total items to buy: #{plan.buys.sum(&:buy)}**"
@@ -708,7 +807,7 @@ module Render
           keep: i.band && { low: i.band.min, high: i.band.max },
           on_hand: i.stock.on_hand, buy: i.buy,
           tracked: i.stock.tracked?, last_checked: i.stock.checked&.to_s,
-          sheet_name: i.stock.name, notes: i.stock.notes }
+          sheet_name: i.stock.name, notes: i.stock.notes, caveat: i.caveat }
       end,
       flags: Notes.all(report, plan).reject { |_, v| v.empty? }
     )
