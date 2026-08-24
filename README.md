@@ -191,6 +191,19 @@ per Scout.  A rank in the report therefore means two pins to hand out, not a
 patch to buy — and an order that gets this backwards is wrong in both directions
 at once.
 
+One line comes from neither the report's counts nor the sheet: a **merit badge
+card** goes out with every badge, and the Scout Shop sells cards by the package
+of 100, so the order carries whole packages rounded up against the report's
+merit badge total.  Nobody counts the card drawer, so that figure is a ceiling
+to subtract from rather than a measured shortfall, and packages are never added
+into the count of single patches.
+
+The inventory sheet counts patches of a retired design in a column apart from
+`Count`, and the order keeps them apart too: an out-of-date patch is never in
+the on-hand number and never reduces what to buy.  It is reported beside the
+line it belongs to, with the sheet's own note on what is wrong with it, because
+whether an older border is acceptable is the Advancement Chair's call to make.
+
 Because a misparse of this report yields a slightly different order rather than
 an obvious error, `verify` leans on the report's own Awards Summary: each
 section's declared total, the summary's line items, and an independent re-tally

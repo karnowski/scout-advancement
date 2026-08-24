@@ -13,6 +13,7 @@
 #   ruby scripts/inventory.rb list [--category NAME] [--section N] [--json]
 #   ruby scripts/inventory.rb low [--at N]
 #   ruby scripts/inventory.rb stale [--days N]
+#   ruby scripts/inventory.rb outdated
 #   ruby scripts/inventory.rb verify
 #   ruby scripts/inventory.rb info
 #
@@ -38,10 +39,27 @@
 #   it fails loudly: a sheet that silently enumerated three of its four tabs
 #   would produce an inventory that looks complete and is not.
 #
-# * **All four tabs share one 5-column shape** — a label column, `Count`,
-#   `Last Checked`, `Checked by`, `Notes`. Only the first header cell differs
-#   ("Rank", "Position", "Award", "MB"), so the header is validated on the last
-#   four columns and the first is simply recorded.
+# * **The sheet carries tabs that are not inventory.** It is the Advancement
+#   Chair's working document, so it gains and loses scratch tabs — a
+#   "CoH 2026-08-25" court-of-honor worksheet, for one — whose columns are
+#   nothing like the inventory's. `INVENTORY_TABS` names the four that are the
+#   inventory and `Fetch.split_tabs` skips the rest, reporting them by name so
+#   a tab that *should* be read cannot vanish quietly. The loudness moves
+#   rather than goes away: one of the four going missing is still fatal.
+#
+# * **All four inventory tabs share one 5-column shape** — a label column,
+#   `Count`, `Last Checked`, `Checked by`, `Notes`. Only the first header cell
+#   differs ("Rank", "Position", "Award", "MB"), so the header is validated on
+#   the last four columns and the first is simply recorded.
+#
+# * **`Out of Date` is a sixth column, and it is not part of `Count`.** So far
+#   only the Merit Badges tab has it, counting patches that are in the box but
+#   of a retired design. The sheet keeps the two apart — Athletics reads
+#   `Count` 1 and `Out of Date` 2 — so adding them together would claim three
+#   patches the troop cannot hand out. It is stored and reported as its own
+#   field, and folded into no total anywhere. Unlike `Count`, a blank here is
+#   0, not NULL: the column is filled in only for the few rows that have an old
+#   patch, so blank means "none", not "never counted".
 #
 # * **Blank rows are section breaks, not end-of-data.** The "Ranks" tab holds two
 #   blocks separated by two blank rows: the rank patches themselves, then the
@@ -95,12 +113,22 @@ DB_PATH   = File.join(CACHE_DIR, "inventory.db")
 SETTINGS  = File.join(REPO_ROOT, "TROOP-SETTINGS.md")
 REQ_SCRIPT = File.join(REPO_ROOT, ".claude", "skills", "scout-req", "scripts", "req.rb")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STALE_SECONDS  = 6 * 3600    # re-download if the cache is older than this
 STALE_DAYS     = 90          # a physical count older than this wants re-checking
 
-# The four columns every tab shares after its own label column.
+# The four columns every inventory tab shares after its own label column.
 COMMON_HEADER = ["Count", "Last Checked", "Checked by", "Notes"].freeze
+
+# A sixth column, so far only on the Merit Badges tab. It counts patches that
+# are in the box but of a retired design, which is why it is a column of its
+# own and not part of `Count`.
+OUT_OF_DATE_HEADER = "Out of Date"
+
+# The tabs that *are* the inventory. Anything else on the sheet is a working
+# tab and is skipped -- but every one of these must be present, because an
+# inventory short a whole tab looks complete and is not.
+INVENTORY_TABS = ["Ranks", "Positions", "Awards", "Merit Badges"].freeze
 
 def die(msg)
   warn "error: #{msg}"
@@ -157,6 +185,7 @@ module DB
         name          TEXT NOT NULL,
         norm          TEXT NOT NULL DEFAULT '',
         count         INTEGER,                   -- NULL when the cell is blank
+        out_of_date   INTEGER NOT NULL DEFAULT 0, -- retired designs; NOT in count
         last_checked  TEXT NOT NULL DEFAULT '',  -- YYYY-MM-DD, from the sheet
         checked_by    TEXT NOT NULL DEFAULT '',
         notes         TEXT NOT NULL DEFAULT '',
@@ -180,7 +209,7 @@ module DB
   end
 
   COLUMNS = %i[category gid tab_index section_index row_index
-               name norm count last_checked checked_by notes].freeze
+               name norm count out_of_date last_checked checked_by notes].freeze
 
   def replace_items(rows)
     handle.transaction do
@@ -276,6 +305,26 @@ module Fetch
     response.body.to_s.force_encoding("UTF-8")
   end
 
+  # The inventory tabs, in sheet order, and whatever else the sheet carries.
+  # The Advancement Chair works in this spreadsheet, so it grows and loses
+  # scratch tabs (a court-of-honor worksheet, say) that are not inventory and
+  # do not have the inventory shape. Those are skipped. A tab from
+  # INVENTORY_TABS going *missing* is still fatal, for the same reason a
+  # partial htmlview scrape is: the result looks complete and is not.
+  def split_tabs(all)
+    wanted = INVENTORY_TABS.to_h { |name| [normalize(name), name] }
+    keep, skip = all.partition { |tab| wanted.key?(normalize(tab[:name])) }
+
+    found = keep.map { |tab| normalize(tab[:name]) }
+    missing = wanted.except(*found).values
+    unless missing.empty?
+      raise "the sheet has no #{missing.map(&:inspect).join(', ')} tab. " \
+            "It carries: #{all.map { |t| t[:name] }.join(', ')}."
+    end
+
+    [keep, skip]
+  end
+
   def unescape(str)
     str.gsub(/\\u([0-9a-fA-F]{4})/) { ::Regexp.last_match(1).hex.chr(Encoding::UTF_8) }
        .gsub(/\\(.)/, '\1')
@@ -315,12 +364,21 @@ module Tab
     end
   end
 
+  # Columns 2-5 are the shape every inventory tab shares; column 6 is the
+  # optional "Out of Date", which so far only the Merit Badges tab has.
   def check_header(name, header)
-    got = header[1, 4].map { |cell| cell.to_s.strip }
-    return if got == COMMON_HEADER
+    got = header[1, 4].to_a.map { |cell| cell.to_s.strip }
+    unless got == COMMON_HEADER
+      raise "tab #{name.inspect} has an unexpected header: #{header.inspect}\n       " \
+            "expected columns 2-5 to be #{COMMON_HEADER.inspect}"
+    end
 
-    raise "tab #{name.inspect} has an unexpected header: #{header.inspect}\n       " \
-          "expected columns 2-5 to be #{COMMON_HEADER.inspect}"
+    extra = header[5..].to_a.map { |cell| cell.to_s.strip }.reject(&:empty?)
+    return if extra.empty? || extra == [OUT_OF_DATE_HEADER]
+
+    raise "tab #{name.inspect} has unexpected columns after " \
+          "#{COMMON_HEADER.last.inspect}: #{extra.inspect}\n       " \
+          "expected nothing, or #{OUT_OF_DATE_HEADER.inspect}"
   end
 
   def build(tab, tab_index, section, index, row)
@@ -335,6 +393,7 @@ module Tab
       name:          name,
       norm:          normalize(name),
       count:         parse_count(row[1]),
+      out_of_date:   parse_out_of_date(tab, index, row[5]),
       last_checked:  parse_date(row[2]),
       checked_by:    row[3].to_s.strip,
       notes:         row[4].to_s.strip }
@@ -347,6 +406,22 @@ module Tab
     return nil if text.empty?
 
     Integer(text, exception: false)
+  end
+
+  # Patches in the box that are of a retired design. **This is not part of
+  # `Count`** — the sheet keeps the two apart (Athletics reads Count 1, Out of
+  # Date 2), so adding them would overstate what can actually be handed to a
+  # Scout. Unlike `Count`, a blank here is 0 rather than NULL: the column is
+  # filled in only for the handful of rows that have an old patch in the box,
+  # so blank is the sheet saying "none", not "nobody has counted". Anything
+  # else in the cell stops the sync, which names the row to go fix.
+  def parse_out_of_date(tab, index, cell)
+    text = cell.to_s.strip
+    return 0 if text.empty?
+
+    Integer(text, exception: false) ||
+      raise("tab #{tab[:name].inspect} row #{index + 2} has a non-numeric " \
+            "#{OUT_OF_DATE_HEADER} cell: #{text.inspect}")
   end
 
   def parse_date(cell)
@@ -372,11 +447,11 @@ rescue ArgumentError
 end
 
 def download_all(sheet_id)
-  tabs = Fetch.tabs(sheet_id)
+  tabs, skipped = Fetch.split_tabs(Fetch.tabs(sheet_id))
   rows = tabs.each_with_index.flat_map do |tab, index|
     Tab.rows(tab, index, Fetch.csv(sheet_id, tab[:gid]))
   end
-  [tabs, rows]
+  [tabs, skipped, rows]
 end
 
 def sync(force: false, quiet: false)
@@ -389,7 +464,7 @@ def sync(force: false, quiet: false)
   end
 
   url = Source.url
-  tabs, rows = download_all(Source.sheet_id(url))
+  tabs, skipped, rows = download_all(Source.sheet_id(url))
   die "the sheet parsed to no rows at all" if rows.empty?
 
   DB.replace_items(rows)
@@ -398,9 +473,17 @@ def sync(force: false, quiet: false)
   DB.set_meta("source_url", url)
   DB.set_meta("synced_at", Time.now.iso8601)
   DB.set_meta("tabs", tabs.map { |t| t[:name] }.join(" | "))
+  DB.set_meta("skipped_tabs", skipped.map { |t| t[:name] }.join(" | "))
   DB.set_meta("item_count", rows.size)
 
-  warn "Synced #{rows.size} items from #{tabs.size} tabs." unless quiet
+  return if quiet
+
+  warn "Synced #{rows.size} items from #{tabs.size} tabs."
+  # Named rather than silently dropped: a tab the sheet gains that *should*
+  # have been read would otherwise vanish without a word.
+  unless skipped.empty?
+    warn "Skipped #{skipped.size} non-inventory tab(s): #{skipped.map { |t| t[:name] }.join(', ')}."
+  end
 rescue StandardError => e
   die e.message
 end
@@ -468,6 +551,15 @@ end
 # --------------------------------------------------------------------------
 def count_text(row) = row["count"].nil? ? "—" : row["count"].to_s
 
+# Never folded into the count: these are in the box but of a retired design, so
+# they are a caveat on the number, not part of it.
+def out_of_date(row) = row["out_of_date"].to_i
+
+def out_of_date_text(row)
+  n = out_of_date(row)
+  n.positive? ? "+#{n} out of date" : nil
+end
+
 def age_text(row)
   days = days_since(row["last_checked"])
   return "never checked" if row["last_checked"].to_s.empty?
@@ -491,6 +583,7 @@ def print_items(rows, show_notes: true)
       category = row["category"]
     end
     line = format("%-#{width}s  %4s   (%s)", row["name"], count_text(row), age_text(row))
+    line += "  #{out_of_date_text(row)}" if out_of_date_text(row)
     line += "  #{row['notes']}" if show_notes && !row["notes"].to_s.empty?
     puts line
   end
@@ -538,6 +631,9 @@ def check_rows(rows, problems)
     where = "#{row['category']} / #{row['name']}"
     problems << "#{where}: count is blank" if row["count"].nil?
     problems << "#{where}: negative count #{row['count']}" if row["count"].to_i.negative?
+    if out_of_date(row).negative?
+      problems << "#{where}: negative #{OUT_OF_DATE_HEADER} #{out_of_date(row)}"
+    end
     check_date(row, where, problems)
   end
 end
@@ -587,6 +683,18 @@ def check_badges(rows, problems, notes)
            "#{extra.sort.join(', ')}. Confirm through scout-req before quoting requirements."
 end
 
+# Reported, never failed: an old-design patch in the box is a true fact about
+# the troop, and one worth surfacing, since it is a patch you would not hand to
+# a Scout and it is deliberately absent from every count.
+def check_out_of_date(rows, notes)
+  stale = rows.select { |r| out_of_date(r).positive? }
+  return if stale.empty?
+
+  total = stale.sum { |r| out_of_date(r) }
+  notes << "#{total} patch(es) of a retired design, not included in any count: " \
+           "#{stale.map { |r| "#{r['name']} (#{out_of_date(r)})" }.sort.join(', ')}."
+end
+
 # Reported, never failed: the troop keeps Eagle items elsewhere.
 def check_pin_coverage(rows, notes)
   pins = rows.select { |r| r["name"].match?(/\bpin\b/i) }
@@ -611,7 +719,13 @@ def run_verify
   check_rows(rows, problems)
   check_duplicates(rows, problems)
   check_badges(rows, problems, notes)
+  check_out_of_date(rows, notes)
   check_pin_coverage(rows, notes)
+
+  skipped = DB.meta("skipped_tabs").to_s.split(" | ")
+  unless skipped.empty?
+    notes.unshift("skipped #{skipped.size} non-inventory tab(s): #{skipped.join(', ')}.")
+  end
 
   notes.each { |n| puts "note: #{n}" }
   puts "" unless notes.empty?
@@ -674,6 +788,21 @@ def cmd_low(args)
   emit(rows, json: json)
 end
 
+# The retired designs, listed on their own. They are in none of the counts, so
+# without this there is nowhere to ask "what is in the box that we would not
+# actually hand to a Scout".
+def cmd_outdated(args)
+  json = !args.delete("--json").nil?
+
+  ensure_synced
+  rows = all_items.select { |r| out_of_date(r).positive? }
+  return puts(JSON.pretty_generate(rows)) if json
+  return puts("Nothing on the sheet is marked out of date.") if rows.empty?
+
+  puts "Retired designs in the box (not included in any count):"
+  print_items(rows)
+end
+
 def cmd_stale(args)
   json = !args.delete("--json").nil?
   days = (flag(args, "--days") || STALE_DAYS).to_i
@@ -695,13 +824,20 @@ def cmd_info
   puts "synced:   #{DB.meta('synced_at')}   (this cache)"
   puts "items:    #{DB.meta('item_count')}"
   puts "tabs:     #{DB.meta('tabs')}"
+  skipped = DB.meta("skipped_tabs").to_s
+  puts "skipped:  #{skipped}   (not inventory tabs)" unless skipped.empty?
   puts "oldest physical count: #{oldest} (#{days_since(oldest)} days ago)" if oldest
   puts ""
-  rows.group_by { |r| r["category"] }.each do |category, group|
-    sections = group.map { |r| r["section_index"] }.uniq.size
-    total = group.sum { |r| r["count"].to_i }
-    puts format("%-14s %3d rows, %2d block(s), %4d on hand", category, group.size, sections, total)
-  end
+  rows.group_by { |r| r["category"] }.each { |category, group| puts tab_summary(category, group) }
+end
+
+def tab_summary(category, group)
+  sections = group.map { |r| r["section_index"] }.uniq.size
+  line = format("%-14s %3d rows, %2d block(s), %4d on hand",
+                category, group.size, sections, group.sum { |r| r["count"].to_i })
+  stale = group.sum { |r| out_of_date(r) }
+  # Appended, never added in: see the header note on `Out of Date`.
+  stale.positive? ? line + format(", %3d out of date", stale) : line
 end
 
 def usage
@@ -713,6 +849,7 @@ def usage
       list [--category NAME] [--section N]
       low [--at N]                   items at or below N (default 0)
       stale [--days N]               rows not physically counted lately (default #{STALE_DAYS})
+      outdated                       patches of a retired design (never in a count)
       verify                         cross-check the parse — run this first
       info                           sheet URL, sync time, per-tab totals
 
@@ -730,6 +867,7 @@ when "count"  then cmd_count(args)
 when "list"   then cmd_list(args)
 when "low"    then cmd_low(args)
 when "stale"  then cmd_stale(args)
+when "outdated" then cmd_outdated(args)
 when "verify" then run_verify
 when "info"   then cmd_info
 else usage

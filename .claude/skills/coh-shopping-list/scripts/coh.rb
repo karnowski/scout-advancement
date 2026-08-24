@@ -32,6 +32,27 @@
 #   that is wrong in both directions at once: it buys rank patches nobody is
 #   waiting for and misses the pins that are actually short.
 #
+# * **Every merit badge handed over comes with a merit badge card, and cards
+#   are sold by the package.** One card per badge awarded, so the need is the
+#   report's own merit badge total. The Scout Shop's usual unit is a package of
+#   100 — single cards turn up but are not reliable — so an order is a whole
+#   number of packages, rounded up. Nothing is subtracted from it: the
+#   inventory sheet has no row for cards and is not meant to grow one, so the
+#   line is a ceiling that says "check the drawer", not a measured shortfall.
+#   A bare package count is never printed on its own, because "2" against a
+#   need of 107 is two packages, not two cards.
+#
+# * **The sheet counts retired designs in a column of their own, and so does
+#   this.** `inventory.rb` reports an `Out of Date` count beside `Count` —
+#   patches that are in the box but of a design the troop no longer hands out
+#   (Lifesaving reads `Count` 0, `Out of Date` 2). The sheet keeps the two
+#   apart deliberately and nothing here folds them together: an out-of-date
+#   patch is never in `on_hand`, never reduces a `short`, and never takes a
+#   line off the order. Whether an older border is good enough anyway is the
+#   Advancement Chair's call, so the number rides along on `Stock` to be
+#   reported — with the sheet's own note ("no PFD on rower"), which is what
+#   that call gets made on.
+#
 # * **The report carries its own tally, unlike the Target grids.** The last page
 #   is an "Awards Summary" whose section headers declare the totals ("15 Rank
 #   Badges", "107 Merit Badges"). `verify` checks three things against each
@@ -149,8 +170,16 @@ RANK_ORDER = ["Scout", "Tenderfoot", "Second Class", "First Class",
               "Star", "Life", "Eagle"].freeze
 
 # Everything else is listed merit badges first, then awards, each alphabetical.
-# Rank groups keep RANK_ORDER instead.
-GROUP_ORDER = ["Merit badge patches", "Awards", "Rank pins", "Rank patches"].freeze
+# Rank groups keep RANK_ORDER instead. The cards follow the patches they go
+# out with, and precede the awards.
+GROUP_ORDER = ["Merit badge patches", "Merit badge cards", "Awards",
+               "Rank pins", "Rank patches"].freeze
+
+# The troop hands a merit badge card to the Scout with every merit badge, so
+# one card is consumed per badge awarded and the report's merit badge total is
+# the need. The Scout Shop sells them by the package; 100 is the usual size.
+MERIT_BADGE_CARD  = "Merit Badge Cards"
+CARDS_PER_PACKAGE = 100
 
 # How many of each rank patch the troop tries to keep on hand. Rank patches are
 # awarded the day they are earned, so the report cannot say what to buy — these
@@ -348,6 +377,10 @@ class Stock
 
   def tracked? = !row.nil?
   def counted? = tracked? && !row["count"].nil?
+
+  # A row the sheet ought to have and does not — worth reporting so someone
+  # goes and looks. Not the same as an item nobody counts; see Uncounted.
+  def missing_row? = !tracked?
   def name = row&.fetch("name")
 
   # What to call the item: the sheet's spelling once matched, since that is the
@@ -362,14 +395,46 @@ class Stock
 
   def short(need) = counted? ? [need - on_hand, 0].max : need
 
+  # Patches in the box of a design the troop no longer hands out. The sheet
+  # keeps this out of `Count`, and so does everything above it: it is not in
+  # `on_hand` and it never reduces a `short`. It is carried only so the order
+  # can say the patches are there — see `Notes.retired`.
+  def out_of_date = row ? row["out_of_date"].to_i : 0
+  def out_of_date? = out_of_date.positive?
+
   def describe
     return "not tracked on the inventory sheet" unless tracked?
+
+    [count_description, retired_description].compact.join("; ")
+  end
+
+  def count_description
     return "count is blank — never recorded" unless counted?
 
     s = "checked #{row['last_checked']}"
     s += ", less #{spent_since_count} awarded after that count" if spent_since_count.positive?
     s
   end
+
+  # Said beside the count, never taken off it.
+  def retired_description
+    "plus #{out_of_date} of an older design" if out_of_date?
+  end
+end
+
+# An item the troop deliberately does not count. The sheet is a record of
+# patches in a box, and nobody is ever going to tally a drawer of merit badge
+# cards, so listing this under "not tracked on the inventory sheet" would be
+# noise rather than something to go fix. `short` still returns the whole need,
+# which is what makes the resulting line a ceiling rather than a shortfall.
+class Uncounted < Stock
+  def initialize(reason)
+    super(nil)
+    @reason = reason
+  end
+
+  def missing_row? = false
+  def describe = @reason
 end
 
 # --------------------------------------------------------------------------
@@ -381,8 +446,10 @@ end
 # `caveat` is what the arithmetic cannot settle on its own — the NOA pentagon
 # count is a ceiling, not a number. A line carrying one is printed even when
 # there is nothing to buy, because the caveat is the reason to look at it.
+# `pack` is set when the Scout Shop sells the item only by the package, which
+# splits every quantity this item reports into two units — see `buy`.
 Item = Struct.new(:group, :reported, :need, :stock, :band, :rank, :pin, :caveat,
-                  keyword_init: true) do
+                  :pack, keyword_init: true) do
   def label = stock.label_for(reported)
 
   # Group first, then rank order for anything rank-shaped, then alphabetically
@@ -397,12 +464,21 @@ Item = Struct.new(:group, :reported, :need, :stock, :band, :rank, :pin, :caveat,
 
   def zero_margin? = band.nil? && stock.counted? && stock.on_hand == need
 
+  # How many to put in the basket: single patches for most things, whole
+  # packages for anything the Scout Shop sells only by the package.
   def buy
-    return stock.short(need) if band.nil?
+    return packages(stock.short(need)) if band.nil?
     return 0 unless stock.counted?
 
-    stock.on_hand < band.min ? band.max - stock.on_hand : 0
+    packages(stock.on_hand < band.min ? band.max - stock.on_hand : 0)
   end
+
+  # What `buy` actually brings home. Two packages of 100 is 200 cards against a
+  # need counted in single cards, so both numbers have to be said out loud.
+  def buy_units = pack ? buy * pack : buy
+
+  # Round up — 107 cards short is two packages, not one and a bit.
+  def packages(count) = pack ? count.ceildiv(pack) : count
 
   # Why the line reads the way it does, for the restock table.
   def verdict
@@ -420,9 +496,11 @@ class Plan
     @report = report
   end
 
-  # Held back for the ceremony: merit badges, awards, and both rank pins.
+  # Held back for the ceremony: merit badges, their cards, awards, and both
+  # rank pins.
   def court_of_honor_items
-    @court_of_honor_items ||= (badge_and_award_items + pin_items).sort_by(&:sort_key)
+    @court_of_honor_items ||=
+      (badge_and_award_items + card_items + pin_items).sort_by(&:sort_key)
   end
 
   # Handed over on the day it was earned, so the box is rebuilt against the
@@ -495,6 +573,22 @@ class Plan
               caveat: "at most one each for #{scouts.size} Scout" \
                       "#{'s' unless scouts.one?} — check whether the pentagon " \
                       "was already awarded for an earlier segment")]
+  end
+
+  # One merit badge card per badge awarded, bought by the package. Nothing is
+  # subtracted: the sheet has no row for cards and is not meant to grow one, so
+  # the number covers the whole ceremony and the caveat says to look in the
+  # drawer first. The need is the summary's own total, which `verify` has
+  # already reconciled against the detail pages three ways.
+  def card_items
+    need = report.lines_for("Merit Badge").sum(&:qty)
+    return [] if need.zero?
+
+    [Item.new(group: "Merit badge cards", reported: MERIT_BADGE_CARD, need:,
+              pack: CARDS_PER_PACKAGE,
+              stock: Uncounted.new("cards on hand are not counted anywhere"),
+              caveat: "one card per merit badge awarded; subtract whatever is " \
+                      "already in the drawer — single cards are not always in stock")]
   end
 
   # One youth pin and one adult pin for every rank earned in the period.
@@ -622,7 +716,9 @@ module Notes
       "Earned an NOA segment — check whether they already have the pentagon" =>
         noa_pentagons(report),
       "Zero margin — need exactly equals stock" => zero_margin(plan),
+      "Bought by the package, and never counted" => packaged(plan),
       "Not tracked on the inventory sheet" => untracked(plan),
+      "Older design in the box, counted separately" => retired(plan),
       "Counted before this award period began" => stale(report, plan) }
   end
 
@@ -653,8 +749,38 @@ module Notes
         .map { |i| "#{i.label} — need #{i.need}, have #{i.stock.on_hand} (#{i.stock.describe})" }
   end
 
+  # Nobody counts these, so the order covers the whole ceremony and the figure
+  # is a ceiling. Say so, rather than letting it read as a measured shortfall.
+  def packaged(plan)
+    plan.items.reject { |i| i.pack.nil? }.map do |i|
+      "#{i.label} — #{i.need} needed, #{i.buy} package#{'s' unless i.buy == 1} " \
+        "of #{i.pack} (#{i.buy_units}) unless the drawer already holds some"
+    end
+  end
+
+  # A row the sheet ought to have and does not. An item the troop deliberately
+  # never counts is not one of these — it has its own heading above.
   def untracked(plan)
-    plan.items.reject { |i| i.stock.tracked? }.map { |i| "#{i.label} (need #{i.need})" }
+    plan.items.select { |i| i.stock.missing_row? }.map { |i| "#{i.label} (need #{i.need})" }
+  end
+
+  # The sheet counts retired designs apart from `Count`, and so does the
+  # arithmetic above — an old-border patch is not one you can hand a Scout, so
+  # it takes nothing off the order. Whether it is good enough anyway is the
+  # Advancement Chair's decision, and this is the list they make it from; the
+  # sheet's own note is what says what is wrong with the patch.
+  def retired(plan)
+    plan.items.select { |i| i.stock.out_of_date? }.map { |i| retired_line(i) }
+  end
+
+  def retired_line(item)
+    old = item.stock.out_of_date
+    line = "#{item.label} — #{old} of an older design in the box, not in the count"
+    line += " (#{item.stock.notes})" unless item.stock.notes.empty?
+    return line unless item.buy.positive?
+
+    "#{line}; the order carries #{item.buy} — up to " \
+      "#{[item.buy, old].min} fewer if an older border will do"
   end
 
   # A count older than the period start cannot reflect the previous ceremony.
@@ -679,6 +805,29 @@ module Render
   # can't tear the row apart.
   def cell(str) = str.to_s.gsub("|", "\\|")
 
+  # A package count is meaningless on its own: "2" is two packages, which is
+  # 200 cards against a need counted in single cards. Always print both.
+  def quantity(item)
+    return item.buy.to_s if item.pack.nil?
+
+    "#{item.buy} package#{'s' unless item.buy == 1} of #{item.pack} (#{item.buy_units})"
+  end
+
+  # The same for a group of lines, which may mix the two units.
+  def buy_total(items)
+    items.group_by(&:pack).map do |pack, group|
+      n = group.sum(&:buy)
+      pack ? "#{n} package#{'s' unless n == 1} of #{pack}" : n.to_s
+    end.join(" + ")
+  end
+
+  # "2 packages of merit badge cards (200)" — for the running total, where the
+  # item's name reads better inside the phrase than beside it.
+  def pack_phrase(item)
+    "#{item.buy} package#{'s' unless item.buy == 1} of " \
+      "#{item.label.downcase} (#{item.buy_units})"
+  end
+
   def header(report)
     puts "# Court of Honor Shopping List"
     puts
@@ -695,7 +844,7 @@ module Render
     items.each do |i|
       have = i.stock.counted? ? i.stock.on_hand.to_s : "-"
       note = [i.stock.describe, i.caveat].compact.join("; ")
-      puts "| #{cell(i.label)} | #{i.need} | #{have} | #{i.buy} | #{cell(note)} |"
+      puts "| #{cell(i.label)} | #{i.need} | #{have} | #{quantity(i)} | #{cell(note)} |"
     end
     puts
   end
@@ -704,10 +853,11 @@ module Render
     header(report) if banner
     puts "## To award at the Court of Honor"
     puts
-    puts "_Merit badges, awards, and both rank pins are held back for the ceremony._"
+    puts "_Merit badges and their cards, awards, and both rank pins are held " \
+         "back for the ceremony._"
     puts
     plan.court_of_honor_items.group_by(&:group).each do |group, items|
-      puts "### #{group} — #{items.sum(&:need)} to hand out, #{items.sum(&:buy)} to buy"
+      puts "### #{group} — #{items.sum(&:need)} to hand out, #{buy_total(items)} to buy"
       puts
       # A caveat is the reason to look at a line, so it is shown even when the
       # arithmetic says there is nothing to buy.
@@ -775,17 +925,26 @@ module Render
       puts "### #{group}"
       puts
       items.sort_by(&:sort_key).each do |i|
-        puts "- **#{i.label}** — buy #{i.buy} (#{reason(i)})#{" — #{i.caveat}" if i.caveat}"
+        puts "- **#{i.label}** — buy #{quantity(i)} (#{reason(i)})#{" — #{i.caveat}" if i.caveat}"
       end
       puts
     end
-    puts "**Total items to buy: #{plan.buys.sum(&:buy)}**"
+    # Packages and single patches are different units, so they are never added
+    # into one number — "43" hides two of them being 200 cards.
+    packs, singles = plan.buys.partition(&:pack)
+    total = "**Total items to buy: #{singles.sum(&:buy)}**"
+    total += ", plus #{packs.map { |i| pack_phrase(i) }.join(', ')}" unless packs.empty?
+    puts total
     puts
     notes(report, plan, banner: false)
   end
 
   # Why this line is on the order: a ceremony shortfall, or a shelf running low.
+  # With no count behind it, the reason is the reason there is no count — "have
+  # no count" reads like an oversight even when nobody was ever going to count.
   def reason(item)
+    return "need #{item.need}, #{item.stock.describe}" if item.band.nil? && !item.stock.counted?
+
     have = item.stock.counted? ? item.stock.on_hand : "no count"
     return "need #{item.need}, have #{have}" if item.band.nil?
 
@@ -805,7 +964,8 @@ module Render
       items: plan.items.map do |i|
         { group: i.group, item: i.label, need: i.need,
           keep: i.band && { low: i.band.min, high: i.band.max },
-          on_hand: i.stock.on_hand, buy: i.buy,
+          on_hand: i.stock.on_hand, out_of_date: i.stock.out_of_date, buy: i.buy,
+          pack_size: i.pack, buy_units: i.buy_units,
           tracked: i.stock.tracked?, last_checked: i.stock.checked&.to_s,
           sheet_name: i.stock.name, notes: i.stock.notes, caveat: i.caveat }
       end,

@@ -28,6 +28,7 @@ ruby scripts/inventory.rb count NAME...               # how many do we have
 ruby scripts/inventory.rb list [--category NAME] [--section N]
 ruby scripts/inventory.rb low [--at N]                # at or below N (default 0)
 ruby scripts/inventory.rb stale [--days N]            # not counted lately (default 90)
+ruby scripts/inventory.rb outdated                    # retired designs, never in a count
 ruby scripts/inventory.rb sync [--force]
 ruby scripts/inventory.rb info
 ```
@@ -38,6 +39,10 @@ ruby scripts/inventory.rb info
   "Also on the sheet" — that is how "first class" shows the patch and then
   points at the two pin rows.
 - `--category` takes a tab name: `Ranks`, `Positions`, `Awards`, `Merit Badges`.
+  Those four tabs *are* the inventory; the sheet also carries working tabs the
+  Advancement Chair adds and deletes, and the script skips those rather than
+  trying to read them.  `verify` and `info` name what was skipped, so a tab
+  that ought to be read cannot go missing quietly.
 - `--section` takes a block index within a tab.  Only `Ranks` has more than one:
   section 0 is the rank patches, section 1 is the rank pins.
 - All query commands accept `--json`.
@@ -90,9 +95,23 @@ read the note before treating a count as the number on hand today.
 - **There are no Eagle pin rows.**  `verify` says so on every run.  The Eagle
   items are stored elsewhere, as the sheet's own notes suggest — report that
   they are not tracked here rather than reporting zero.
+- **`Out of Date` is not part of the count, and must never be added to it.**
+  The Merit Badges tab has a sixth column counting patches that are in the box
+  but of a retired design.  Athletics reads `Count` 1 and `Out of Date` 2 —
+  that is one patch to hand a Scout, not three.  Report it as the separate
+  thing it is: "1 on hand, plus 2 of an older design".  `outdated` lists every
+  such row, and `verify` names them on every run.
+- **An out-of-date patch does not fill an order.**  If a Scout earned Lifesaving
+  and the sheet says `Count` 0 with `Out of Date` 2, the answer is still that
+  one has to be bought.  Mention the old ones only as a footnote — the
+  Advancement Chair may decide an older border is fine, but that is their call
+  to make, not an assumption to build the answer on.
 - Quote a `Notes` cell when it changes the answer.  Several are questions the
   Advancement Chair left for themselves ("who do we give these to?"), and a few
-  flag an old design or a second storage location.
+  flag an old design or a second storage location.  The rows with an
+  `Out of Date` count usually have a note saying what is wrong with them
+  ("older green border", "no PFD on rower") — that note is the useful half of
+  the answer.
 
 ## Requirement text and counselors come from elsewhere
 
@@ -139,10 +158,28 @@ changing the parser.
   `items.push({name: ..., gid: ...})` per tab, in tab order.  This is the one
   brittle step, so it fails loudly rather than returning a partial sheet — an
   inventory missing a whole tab looks complete and is not.
-- **All four tabs share one five-column shape**: a label column, then `Count`,
-  `Last Checked`, `Checked by`, `Notes`.  Only the first header cell differs per
-  tab ("Rank", "Position", "Award", "MB"), so the header check covers the other
-  four and the first is just recorded.
+- **Not every tab on the sheet is inventory.**  It is the Advancement Chair's
+  working document, so it gains and loses scratch tabs — a "CoH 2026-08-25"
+  court-of-honor worksheet, for one — whose columns look nothing like the
+  inventory's.  `INVENTORY_TABS` names the four that are the inventory and the
+  rest are skipped.  The loudness moves rather than goes away: **one of the four
+  going missing is still a hard failure**, because an inventory short a whole
+  tab looks complete and is not, and the skipped ones are named by `verify` and
+  `info` so a tab that should be read cannot vanish without a word.
+- **All four inventory tabs share one five-column shape**: a label column, then
+  `Count`, `Last Checked`, `Checked by`, `Notes`.  Only the first header cell
+  differs per tab ("Rank", "Position", "Award", "MB"), so the header check
+  covers the other four and the first is just recorded.
+- **`Out of Date` is a sixth column, and the sheet keeps it out of `Count`
+  deliberately.**  Only the Merit Badges tab has it so far.  Athletics reads
+  `Count` 1 and `Out of Date` 2, so the two cannot be summed — doing it would
+  claim three patches the troop cannot hand out.  It is stored as its own field
+  and folded into no total anywhere, including `info`'s per-tab "on hand" and
+  the numbers `coh-shopping-list` subtracts.  Unlike `Count`, **a blank here is
+  0, not NULL**: the column is filled in only for the few rows that have an old
+  patch in the box, so blank is the sheet saying "none of these", not "nobody
+  has counted".  Anything non-numeric in that cell stops the sync and names the
+  row, rather than being quietly read as zero.
 - **Blank rows are section breaks, not end-of-data.**  The "Ranks" tab holds the
   rank patches, then two blank rows, then the rank pins.  A parser that stopped
   at the first blank row would silently drop every pin — half that tab.  A run
@@ -161,6 +198,7 @@ changing the parser.
 named, counted, and dated; no date unparseable or in the future; no duplicate
 name within a tab; and every badge in the requirements book present on the
 Merit Badges tab, resolved through `scout-req` rather than by opening the book.
-Post-2025 badges and missing rank/pin combinations are reported as notes rather
-than failures, because both are true statements about the troop and not parse
-errors.
+Post-2025 badges, missing rank/pin combinations, out-of-date patches, and the
+non-inventory tabs that were skipped are reported as notes rather than
+failures, because every one of them is a true statement about the troop and not
+a parse error.

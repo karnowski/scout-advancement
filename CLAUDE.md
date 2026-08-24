@@ -192,19 +192,37 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   the report calls for two *pins* and never a patch, and rank stock is rebuilt
   against the `RANK_BANDS` min/max rather than against the report. Because a
   patch that left the box before its row was counted is still counted,
-  `rank_stock` subtracts any award dated after `Last Checked`. Every list it
-  prints is ordered by one `Item#sort_key`: ranks lowest-to-highest via
+  `rank_stock` subtracts any award dated after `Last Checked`.  The sheet's
+  `Out of Date` column is carried through the same way `inventory.rb` reports
+  it — **never folded into a count**: a retired-design patch is not in
+  `on_hand`, never reduces a shortfall, and never takes a line off the order.
+  It rides along on `Stock` only so `Notes.retired` can say it is there, with
+  the sheet's note on what is wrong with it, and leave the "will an older
+  border do" call to the Advancement Chair.  **Merit badge
+  cards are the one line the sheet cannot answer for**: one goes out with every
+  badge, so the need is the report's own merit badge total, but nobody counts
+  the drawer and the Scout Shop sells them by the package — so the buy is that
+  total divided by `CARDS_PER_PACKAGE` and rounded up, an `Uncounted` stock
+  keeps it out of the "row missing from the sheet" notes, and packages are never
+  added into the count of single patches.  Every list it prints is ordered by one
+  `Item#sort_key`: ranks lowest-to-highest via
   `RANK_ORDER` (the report's two-column summary reads out in page order, not
-  advancement order), everything else grouped merit badges before awards and
-  alphabetical within each.
+  advancement order), everything else grouped merit badge patches, then cards,
+  then awards, and alphabetical within each.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
   hours old. The sheet is link-shared, so no Google credentials are involved.
-  Two things about it are not guessable: the CSV endpoint takes a `gid` but
+  Three things about it are not guessable: the CSV endpoint takes a `gid` but
   will not enumerate the tabs, so the tab names and gids are scraped from the
-  sheet's `/htmlview` page; and blank rows are *section breaks*, not
-  end-of-data, so a parser that stops at the first one drops every rank pin.
+  sheet's `/htmlview` page; blank rows are *section breaks*, not end-of-data,
+  so a parser that stops at the first one drops every rank pin; and the Merit
+  Badges tab's `Out of Date` column is **not** part of `Count` — the two are
+  kept apart on the sheet (Athletics reads 1 and 2), so summing them claims
+  patches the troop cannot hand out. It is carried as its own field and added
+  into no total. `INVENTORY_TABS` names the four tabs that are the inventory,
+  since the sheet also carries the Advancement Chair's working tabs; those are
+  skipped and named, while one of the four going *missing* stays fatal.
 
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
@@ -247,8 +265,9 @@ Two rules generalize across all of them:
   hand-kept inventory guarantees: every row named, counted, and dated, no date
   unparseable or in the future, no duplicate name within a tab, and every badge
   in the book present on the Merit Badges tab via `req.rb list --kind badge`.
-  Post-2025 badges and absent rank/pin rows are reported as *notes*, not
-  failures — both are true facts about the troop rather than parse errors.
+  Post-2025 badges, absent rank/pin rows, out-of-date patches, and the skipped
+  non-inventory tabs are reported as *notes*, not failures — every one is a
+  true fact about the troop rather than a parse error.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside

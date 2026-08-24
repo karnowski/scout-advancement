@@ -24,12 +24,13 @@ that line**:
 | | Distributed | Appears in the order as |
 | :--- | :--- | :--- |
 | Rank patches, position patches | **Immediately**, the day it is earned | a **restock** — the box gets rebuilt |
-| Merit badges, special awards, National Outdoor Awards, **both** rank pins | **Held for the court of honor** | a **count of what to hand out** |
+| Merit badges and their cards, special awards, National Outdoor Awards, **both** rank pins | **Held for the court of honor** | a **count of what to hand out** |
 
 So a Scout who reached First Class, earned two merit badges, and earned World
 Conservation is already wearing the First Class patch.  At the ceremony they
-receive the two merit badges, World Conservation, and the First Class **youth
-and adult pins** — two pins, one for the Scout and one for a parent.
+receive the two merit badges and their two cards, World Conservation, and the
+First Class **youth and adult pins** — two pins, one for the Scout and one for
+a parent.
 
 Getting this backwards produces an order that is wrong in both directions at
 once: it buys rank patches nobody is waiting for, and misses the pins that are
@@ -73,6 +74,56 @@ nor the 2026 change list carries is a badge that very likely has no row on the
 inventory sheet either, so it will surface as "not tracked" rather than as a
 real count.  That is a patch the troop may have never stocked.  Say so plainly
 rather than reporting it as a zero.
+
+## Merit badge cards are bought by the package, and nobody counts them
+
+Every merit badge handed over comes with a **merit badge card**, so the need is
+simply the report's own merit badge total — 107 badges is 107 cards.  Two things
+make that line read differently from every other line on the order:
+
+- **The Scout Shop's usual unit is a package of 100.**  Single cards turn up but
+  are not reliable, so the order is a whole number of packages, **rounded up**.
+  The script never prints a bare package count: `2` against a need of 107 is two
+  packages, not two cards, so it always says both — `2 packages of 100 (200)`.
+  For the same reason the running total keeps packages out of the item count —
+  `Total items to buy: 11, plus 2 packages of merit badge cards (200)`.
+- **The inventory sheet has no row for cards, and is not meant to grow one.**
+  The sheet is a record of patches in a box; nobody tallies a drawer of cards.
+  So the number is a **ceiling** — what the ceremony needs, before subtracting
+  whatever is already in the drawer.  Say that when you report it, the way you
+  say it for the NOA pentagon.  `notes` lists the line under "Bought by the
+  package, and never counted" for exactly this reason.
+
+This is the one item on the order the sheet cannot answer for, and it is
+deliberately *not* the same thing as "not tracked on the inventory sheet" —
+that heading means a row is missing and someone should go look.  Cards will
+never have one.
+
+## An out-of-date patch does not fill an order
+
+The inventory sheet counts patches of a **retired design** in a column of their
+own, `Out of Date`, and it is **not part of `Count`** — Lifesaving reads `Count`
+0 and `Out of Date` 2, which means nothing to hand out, plus two of an older
+silver border sitting in the box.  The order follows the sheet exactly: an
+out-of-date patch is never in the on-hand number, never reduces what to buy, and
+never takes a line off the list.  Two of those Lifesaving patches still means
+buying two.
+
+It is still worth saying out loud, because it may change the trip.  Every line
+whose row has one carries `plus 2 of an older design` in its Notes column, and
+`notes` lists them under **"Older design in the box, counted separately"** —
+with the sheet's own note on what is wrong with them ("no PFD on rower", "2 have
+older silver border; look older") and how much of the order could come off if
+the older border will do.
+
+**That last decision belongs to the Advancement Chair**, and the job here is to
+hand them what they need to make it — not to make it for them in either
+direction.  Do not quietly subtract the old patches, and do not leave them out of
+the answer either.  For the whole list, whether or not it is on this order:
+
+```
+ruby ../badge-inventory/scripts/inventory.rb outdated
+```
 
 ## The National Outdoor Award is three purchases, not one
 
@@ -130,6 +181,9 @@ Two more things follow from how the parts work:
   silver.  Report anything untracked as untracked and let the Advancement Chair
   check, rather than ordering as if the count were zero.
 - **A blank count is not zero either.**  Nobody ever wrote a number in that cell.
+- **An out-of-date patch is not stock.**  The sheet counts retired designs
+  separately and so does the order; report them as the caveat they are, never as
+  part of the count — see above.
 - **Zero margin is worth saying out loud.**  Dozens of merit badge lines
   routinely come out at need exactly equals stock.  Anything that left the box
   since the last physical count turns one of those into a shortfall discovered
@@ -148,9 +202,10 @@ Every list this skill prints — the order, the shopping list, the notes, the JS
   Tenderfoot, Star, Second Class, Life*, which is the order of the page rather
   than the order of advancement.  Rank pins follow their rank, youth pin before
   adult pin.
-- **Everything else is grouped by type — merit badges, then awards — and sorted
-  alphabetically by name within each group.**  Not by how many to buy: a
-  shopping list is read against a shelf, and the shelf is alphabetical.
+- **Everything else is grouped by type — merit badge patches, merit badge
+  cards, then awards — and sorted alphabetically by name within each group.**
+  Not by how many to buy: a shopping list is read against a shelf, and the
+  shelf is alphabetical.
 
 The name that sorts is the one the item will be ordered under, which is the
 sheet's spelling wherever it differs from the report's.
@@ -224,6 +279,16 @@ changing the parser.
   Sailing".  Prefix matching in either direction closes the rest.  Only the
   National Outdoor Awards need help: nothing folds "NOA - Hiking" into
   "National Outdoor Awards (Hiking)", so the leading `NOA` is expanded.
+- **A merit badge card goes out with every merit badge, and cards are sold by
+  the package.**  The need is the report's merit badge total; the buy is that
+  divided by 100 and rounded up.  Packages and single patches are different
+  units and are never added into one number.  Nothing is subtracted, because
+  the sheet has no row for cards — see the section above.
+- **`Out of Date` is a column of its own on the sheet, and never part of
+  `Count`.**  `inventory.rb` carries it as a separate field, and so does this
+  script: it is not in `on_hand`, it never reduces a shortfall, and it is added
+  into no total.  Athletics reads `Count` 1 and `Out of Date` 2 — one patch to
+  hand a Scout, not three.
 - **A National Outdoor Award is up to three separate purchases**, and the report
   names only two of them — see the section above.  A segment line
   (`NOA - Hiking`) is a patch, a device line (`NOA Camping Gold`) is a pin, and
