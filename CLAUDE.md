@@ -71,6 +71,11 @@ plans and in answers to the Advancement Chair; they just never reach git.
   partials, and the awards, National Outdoor Award segments, training courses
   and Order of the Arrow standing the report also carries.  It reads; it does
   not plan.
+- `.claude/skills/generate-advancement-plan/` — turns one Scout's stored record
+  into a plan: what to work on, in what order, and by which date, across rank
+  requirements, merit badges, and the position of responsibility.  It plans; it
+  does not report, and it does **one Scout at a time** — cohort work, batch
+  sessions, and meeting-night throughput are deliberately not here.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -79,6 +84,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
   rather than the whole report
   (`target-first-class-2026-08-01-seals.md` is the Seals patrol).  Two runs of
   the same scope on the same report overwrite; don't invent `-backup` names.
+  `generate-advancement-plan` names its per-Scout plans
+  `advancement-plan-{lastname}-{firstname}-YYYY-MM-DD.md`, lowercased, still
+  dated from the report the record came from rather than from today.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
 - `.rubocop.yml` / `.rubocop_todo.yml` — lint configuration (see below).
@@ -137,9 +145,10 @@ before anything else, so no `bundle exec` prefix is needed.
 ### Skill scripts
 
 Each skill has one script under `.claude/skills/<skill>/scripts/` — except
-`scout-req`, which has one per document it reads, and `individual-history`,
-whose script reads the database `import-individual-history` writes rather than a
-document of its own:
+`scout-req`, which has one per document it reads, `individual-history`, whose
+script reads the database `import-individual-history` writes rather than a
+document of its own, and `generate-advancement-plan`, whose script opens neither
+and reads its record back out of `individual-history`:
 
 - **`gta.rb`** (guide-to-advancement) — shells out to `pdftotext` to build a
   page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt on
@@ -271,6 +280,28 @@ document of its own:
   beside its own — they now agree for every Scout, so that line is a **guard**:
   a mismatch means one of the two lists has moved.  Do not "restore" the 14th
   slot to match the book without raising it with the Advancement Chair.
+- **`plan.rb`** (generate-advancement-plan) — the dated arithmetic behind one
+  Scout's plan.  It opens neither a PDF nor the database: **the record comes
+  from `history.rb json`**, so the plan and the report cannot describe different
+  Scouts, and name matching and freshness are the reading skill's.  Its whole
+  design is that **there are three kinds of clock and they are not
+  interchangeable.**  *Elapsed* — active participation, POR tenure — is calendar
+  time that passes whether or not anyone is working on it, so those dates come
+  out of the record and are facts.  *Work-start* — Tenderfoot 6b/6c, Second
+  Class 7a, First Class 8a, Personal Management 2, Personal Fitness 7/8, Family
+  Life 3 — measures 30 days of *tracked work*, so it runs from `--start` and
+  never from a date in the record: a Scout whose 6a was signed six months ago has
+  not thereby banked 30 days of 6b tracking.  *Opportunity* — Camping's 20
+  nights, Citizenship in the Community's 8 hours, Personal Fitness's exams — is
+  not a span of calendar at all, and `--by` deliberately prints no date for it,
+  because inventing one is the specific error it exists to avoid.  Two further
+  things are wrong if reinvented: the fitness chain's start-by is **cumulative**,
+  since each link needs the one above it finished, and **a filled merit badge
+  slot is not a signed rank requirement** — counting them together makes every
+  Scout with badges toward Eagle look as though they had banked rank work.  Its
+  `verify` checks no parse, because there is none; it checks that every match key
+  still resolves and that its copies of `EAGLE_SLOTS` and the POR tenure
+  algorithm still agree with what `individual-history` prints, Scout by Scout.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -291,17 +322,19 @@ extracts, what a given mark means, which column cannot be trusted, which
 cross-check catches a misparse.  Those facts live next to the code they
 constrain, not here: in **`SKILL.md` under "Facts about the ... the script
 depends on"** for the five TroopMaster skills, `scout-req` (which has one such
-section per document), `eagle-req`, `badge-inventory`, and `individual-history`
-(whose source is the database rather than a document), and in **header and
-inline comments** in `gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`,
-`eagle.rb`, `inventory.rb`, `coh.rb`, `individual_history.rb`, and `history.rb`
-each carry a second copy in their own header, next to the code the facts
-constrain.
+section per document), `eagle-req`, `badge-inventory`, `individual-history`
+(whose source is the database rather than a document), and
+`generate-advancement-plan` (whose source is `individual-history`), and in
+**header and inline comments** in `gta.rb` and `calendar.rb`.  `req.rb`,
+`changes.rb`, `eagle.rb`, `inventory.rb`, `coh.rb`, `individual_history.rb`,
+`history.rb`, and `plan.rb` each carry a second copy in their own header, next
+to the code the facts constrain.
 
-**Read them before changing a parser** — or, for `history.rb`, before changing
-what an answer is computed from. Each was established by getting it wrong
-first, and none is recoverable by reading the code alone — the code shows what is
-done, not the alternative that was tried and silently produced garbage.
+**Read them before changing a parser** — or, for `history.rb` and `plan.rb`,
+before changing what an answer is computed from. Each was established by getting
+it wrong first, and none is recoverable by reading the code alone — the code
+shows what is done, not the alternative that was tried and silently produced
+garbage.
 
 Two rules generalize across all of them:
 
@@ -343,7 +376,15 @@ Two rules generalize across all of them:
   in the book present on the Merit Badges tab via `req.rb list --kind badge`.
   Post-2025 badges, absent rank/pin rows, out-of-date patches, and the skipped
   non-inventory tabs are reported as *notes*, not failures — every one is a
-  true fact about the troop rather than a parse error.
+  true fact about the troop rather than a parse error.  `plan.rb` is the one
+  `verify` that checks no parse at all, because its input arrives already
+  verified: what goes wrong there is silent **disablement**, so it checks that
+  every badge name in its tables still resolves against `req.rb list --kind
+  badge`, that every requirement label and fitness-chain link still appears in
+  the imported data, and that its copies of `EAGLE_SLOTS` and the POR tenure
+  algorithm still agree with what `individual-history` prints for every Scout.
+  A renamed badge or a table edited in one copy and not the other otherwise
+  leaves a plan that reads perfectly and has quietly stopped applying a rule.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
@@ -398,6 +439,11 @@ post-2025 badge enters unannounced, and 45 of the 95 badges on the troop's
 current whole-troop Individual History report changed effective Jan. 1, 2026, so
 the 2025 text is out of date for nearly half of them.
 
+`plan.rb` pipes its own `names` through `req.rb check` for that same reason, one
+Scout at a time, and it is the last place the check can catch anything: a plan is
+what actually sends a Scout to do months of work.  Exit 3 there stops the plan —
+the badge is named, the banner is quoted, and no work is assigned on it.
+
 `mbc.rb` and `inventory.rb` are the other consumers, and both use `req.rb list
 --kind badge` rather than `check` — they need the *whole* badge list, because
 "we have no counselor for that badge" / "we hold no patches for that badge" and
@@ -408,15 +454,21 @@ requirements from scouting.org.
 
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
-`RANK_LADDER` and `PALM_METALS` in `individual_history.rb`, and `EAGLE_SLOTS`
-and `POR_MONTHS` in `history.rb` — are **match keys, not a second copy of the
-book.**  The two `EAGLE_SLOTS` tables are the one place the repo deliberately
-*departs* from the book rather than abbreviating it, and the reason is written
-out at `history.rb` above. They exist so a parser can identify a column or find the Scouts on
-a clock. Their labels are far too short to plan from and are not maintained
-against the book; the text that governs comes from `scout-req`. Do not quote one
-into a plan, and do not delete them either — the parsers do not work without
-them.
+`RANK_LADDER` and `PALM_METALS` in `individual_history.rb`, `EAGLE_SLOTS` and
+`POR_MONTHS` in `history.rb`, and `EAGLE_SLOTS`, `POR_MONTHS`, `ACTIVE_MONTHS`,
+`FITNESS_CHAIN`, `CLOCKS`, and `BADGE_PREREQS` in `plan.rb` — are **match keys,
+not a second copy of the book.**  The three `EAGLE_SLOTS` tables are the one
+place the repo deliberately *departs* from the book rather than abbreviating it,
+and the reason is written out at `history.rb` above.  Two guards keep them in
+step, and neither covers all three: `plan.rb verify` compares its copy against
+the slot labels `history.rb eagle` prints, and `mbc.rb verify` compares its own
+against the stars on the MBC report.  Nothing checks `history.rb`'s against
+`mbc.rb`'s directly, so **run both verifies after touching any of them.** They
+exist so a
+parser can identify a column, or find the Scouts on a clock. Their labels are far
+too short to plan from and are not maintained against the book; the text that
+governs comes from `scout-req`. Do not quote one into a plan, and do not delete
+them either — the parsers do not work without them.
 
 ## Reference documents (source of truth)
 

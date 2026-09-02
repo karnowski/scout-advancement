@@ -292,6 +292,41 @@ Like the importer it reports rather than plans — it says what is signed off an
 how many months have been served, and leaves what to do about it to
 `generate-advancement-plan`.
 
+### `generate-advancement-plan`
+
+Turns one Scout's stored record into **a plan**: what to work on, in what order,
+and by which date.  The record says what is done; this says what to do about it,
+across rank requirements, merit badges, and the position of responsibility.  It
+is the skill for a Scoutmaster conference, for a parent asking "what's next",
+and for deciding where a Saturday is best spent.
+
+Its whole design is that **there are three kinds of clock and they are not
+interchangeable**.  *Elapsed* time — six months active as a Star Scout, months
+served in a position — passes whether or not anyone is working on it, so those
+dates come out of the record and are facts.  *Work-start* clocks — Tenderfoot's
+30-day fitness log, Personal Management's 13 weeks, Family Life's 90 days —
+measure 30 days of *tracked work*, so they start when the Scout starts and never
+from a date already in the record.  And *opportunity* items — Camping's 20
+nights, Citizenship in the Community's 8 volunteer hours, Personal Fitness's
+exams — are not a span of calendar at all: they need an event or an appointment,
+so the plan takes them to `troop-calendar` rather than inventing a date.  A plan
+that conflates the three is specific, confident, and wrong.
+
+Three findings come out of it more often than any others.  **Work banked above
+an unearned rank** — ranks must be earned in sequence, so a Scout can have
+thirty-odd First Class requirements signed and be stuck behind Tenderfoot, and a
+handful of cheap items converts all of it.  **A position of responsibility with
+no clock running at all**, which is a much larger problem than one that has not
+finished yet, and usually fixable the same week.  And **the fitness chain's
+cumulative start-by**: First Class 8a is twelve weeks out, not four, because
+each link needs the one above it finished.
+
+It plans for one Scout at a time, and it plans only — what the record *says* is
+`individual-history`, so every line of a plan can be checked against it.  Before
+writing anything it runs every badge name through `scout-req`, because a
+TroopMaster report is exactly where a badge whose requirements changed in 2026
+enters unannounced.
+
 ### `badge-inventory`
 
 Answers **"do we have one, and how many?"** — rank patches and rank pins,
