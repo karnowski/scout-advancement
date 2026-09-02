@@ -18,10 +18,17 @@ is `individual-history`; planning from those answers is
 The Individual History report is the most complete per-Scout export TroopMaster
 produces.  For every Scout it prints the ranks already earned, **every
 requirement of every rank not yet earned** with its sign-off date or `__/__/__`,
-the merit badges earned, the partials with their open requirements and
-counselor, camping/hiking/service totals, special awards, and the full
+the merit badges earned, the partials with their open requirements, counselor
+and remarks, camping/hiking/service totals, special awards, National Outdoor
+Award segments, training courses, Order of the Arrow membership, and the full
 leadership history with dates.  That is enough to plan from without going back
 to the PDF.
+
+It exports at any scope — one patrol, or the whole troop.  The troop's current
+export is all 38 Scouts across 92 pages, and the whole-troop run is what turns
+up the shapes a small one never shows: Palms past the third, a Scout who joined
+last month and has no ranks or badges at all, a Scout holding four positions at
+once.
 
 ## Tool
 
@@ -81,8 +88,8 @@ Exit 3 means at least one badge is in **neither** the 2025 printing nor the 2026
 change list — stop and get its requirements from scouting.org.  A badge merely
 *changed* for 2026 is not an error, but the 2025 text is out of date for it, so
 `req.rb show NAME` before planning any work on it.  On the troop's current
-report 12 of the 39 badges named have changed for 2026, so this is not a rare
-case.
+whole-troop report 45 of the 95 badges named have changed for 2026, so this is
+not a rare case — it is nearly half of them.
 
 ## Freshness is per Scout
 
@@ -117,13 +124,37 @@ These are facts about the rows, and they hold wherever the rows are read —
   with a strange name.  In the data they are
   `kind = 'badge_slot'` with a NULL `badge`, and they are reported as "N more
   merit badges".
+- **`rank_blocks.eagle_mb_remaining` is TroopMaster's count, not ours.**  Where
+  a rank still wants Eagle-required badges the report heads its block
+  `Star (2 Eagle MB remaining)`, and that number is stored as printed.  It is
+  NULL for every block the report did not annotate.  Do not treat a NULL as
+  zero, and do not recompute it here — Eagle-required coverage is
+  `individual-history`'s answer, from `EAGLE_SLOTS`.
+- **Palms repeat with an ordinal.**  After Bronze, Gold and Silver the cycle
+  starts again as `2nd Bronze Palm`, and the troop's report reaches
+  `3rd Gold Palm`.  Each is its own block with its own requirements; `rank` in
+  the data is the heading verbatim, and `block_order` is what puts them in the
+  order they are awarded.
+- **`outdoor_awards` and `training_courses` are not `special_awards`.**  The
+  report keeps all three apart and so does the database: the "NOA Camping Gold"
+  under Special Awards is the award, while "Camping" under National Outdoor
+  Awards is the segment behind it.
+- **A partial's `remarks` are the Advancement Chair's own notes**, not part of
+  `open_reqts`.  They are free text — "Completed one ride for 6Bd at
+  WinterBlast 26" — and often say something the percentage does not.
 - **`*` after a badge name means Eagle-required.**  It is stored as
   `eagle_required` and stripped from the name.
-- **`#` is not interpreted.**  The page legend defines `#` only for leadership
-  ("Position not credited toward rank"), and that meaning is stored as
-  `credited = 0`.  But `#` also appears on a partial merit badge, where the
-  legend says nothing.  The marker is stored verbatim and reported as a note;
-  do not read a meaning into it — ask the Advancement Chair.
+- **`#` is stored verbatim and still not interpreted, but the evidence has
+  narrowed.**  The page legend defines `#` only for leadership ("Position not
+  credited toward rank"), and that meaning is stored as `credited = 0`.  On a
+  badge the legend says nothing — yet across all 38 Scouts on the whole-troop
+  report **Citizenship in Society is the only badge that ever carries it**, and
+  the only Citizenship badge that never carries `*`.  TroopMaster's own
+  Eagle-remaining counts reproduce only if CiS is left out of the Eagle-required
+  list, so `#` on a badge reads as "not counted toward Eagle-required" — the
+  same sense the legend gives it for a position.  That is inference, not the
+  legend, so the marker is still stored raw and reported as a note.  See
+  `individual-history` for what it does to an Eagle answer.
 - **Partials carry a requirement *year*** (`Personal Management* (2019)`) — the
   edition of the requirements the Scout started under.  Say which year when
   discussing a partial; it is often not the current one.
@@ -177,6 +208,30 @@ was tried and silently produced garbage.
   `08/29/23` never appear in the same line element.  Reading lines top to bottom
   interleaves the columns; rows have to be rebuilt by clustering on y and
   sorting by x.
+- **Except for a value TroopMaster shrank to fit, whose `yMin` is *lower* than
+  its own label's.**  A Scout holding four positions gets a `Position:` value
+  set at 5.5pt rather than 9.25pt, reported as starting 3pt below the
+  `Position:` beside it.  Clustering on `yMin` alone leaves it in a row of its
+  own that nothing claims, so a row also takes in a line whose band sits
+  *inside* the band already open — containment, not proximity.
+- **A block heading is not always just the rank.**  Where a rank still wants
+  Eagle-required badges the heading carries TroopMaster's count of them,
+  `Star (2 Eagle MB remaining)`; past three Palms it carries an ordinal,
+  `2nd Bronze Palm`.  Matching headings against a fixed list of names misses
+  both **silently**: the rows below are read as more of the previous block, and
+  the heading itself — a lone cell with no date — is filed as an annotation on
+  the requirement above it.  The parenthetical is matched strictly, so a form
+  nobody has seen yet fails rather than being read as part of the rank name.
+- **A partial carries `Remarks:` as well as `Open Reqts:`, and either can
+  wrap.**  A wrapped line is unlabelled, so the parser has to remember which
+  field it continues.  Assuming it is always `Open Reqts:` appends the
+  Advancement Chair's prose to the list of open requirements.
+- **`Position:` is a comma-separated list** when a Scout holds more than one
+  job.  Compared as a single string it never matches the Leadership section.
+- **TroopMaster prints badge names short** — "Fish and Wildlife" for the book's
+  "Fish and Wildlife Management" — so the book match falls back to an
+  unambiguous containment match, as `req.rb resolve` does.  Without it the
+  troop's own abbreviations are announced as badges the book does not carry.
 - **Column x-origins differ from Scout to Scout.**  A Scout with long badge
   names gets wider columns.  Nothing may hard-code an x.  Cells are paired left
   to right — label, then the next cell that looks like a date — which is why a
@@ -206,6 +261,15 @@ was tried and silently produced garbage.
   Star/Life/Eagle slot appears in that list *with the same date* — the two are
   printed from the same data by different code paths, so a slipped column
   disagrees.
+- **A Scout who has just joined has none of it.**  Blank `Rank:`, no Completed
+  Ranks, and — the one that bites — **no Merit Badges section at all**, not a
+  heading reading zero.  So a missing tally is a fact about the Scout unless
+  badges were parsed anyway, which would mean the heading was missed.  Both are
+  reported as notes; five Scouts on the current report have no badges yet.
+- **Beyond the usual sections the report also prints Order of the Arrow,
+  National Outdoor Awards and Training Courses**, each for the handful of Scouts
+  who have any.  Every OA field is printed whether or not it has a value, so an
+  empty one is a label with nothing after it.
 - **Freshness is the date printed on the report**, not the file's mtime and not
   the filename.  It is printed top-left of each Scout's first page.
 

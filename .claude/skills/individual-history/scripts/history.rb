@@ -13,6 +13,7 @@
 #   ruby scripts/history.rb partials [NAME] [--stalled DAYS]
 #   ruby scripts/history.rb badge    BADGE
 #   ruby scripts/history.rb who      LABEL
+#   ruby scripts/history.rb awards   [NAME]
 #   ruby scripts/history.rb roster
 #
 # This script READS. It never writes to the database and never opens a PDF —
@@ -25,18 +26,42 @@
 # Facts this script depends on
 # --------------------------------------------------------------------------
 #
-# * **`eagle_required` cannot answer "which Eagle badges are left".** The flag
-#   is set from the `*` TroopMaster prints beside a badge name, and the report
-#   does not always print it: on the troop's current report Citizenship in
-#   Society appears as `Citizenship in Society#` — the `#` marker, not `*` — so
-#   it is stored `eagle_required = 0` for a badge that is squarely
-#   Eagle-required. Eagle coverage is therefore computed against `EAGLE_SLOTS`
-#   below, and the flag is only ever *displayed*, never counted.
+# * **`eagle_required` cannot answer "which Eagle badges are left", even though
+#   it now agrees with the slot list.** The flag is set from the `*` TroopMaster
+#   prints beside a badge name, and on the troop's current report every starred
+#   badge is one of the slots below and nothing outside them is starred. It is
+#   still not the basis for coverage, for two reasons that have nothing to do
+#   with whether it is accurate: the OR-groups mean a count of flags is not a
+#   count of slots, and **a badge the report never names carries no flag at
+#   all** — an unearned, unstarted Eagle-required badge simply is not in the
+#   rows. Coverage is computed against `EAGLE_SLOTS` below; the flag is only
+#   ever *displayed*.
 #
-# * **Three Eagle slots are OR-groups, so 14 slots are not 14 badges.**
+# * **Three Eagle slots are OR-groups, so 13 slots are not 13 badges.**
 #   Emergency Preparedness OR Lifesaving; Environmental Science OR
 #   Sustainability; Swimming OR Hiking OR Cycling. Any one alternate fills its
 #   slot, so counting earned Eagle-required badges overstates what is left.
+#
+# * **Citizenship in Society is NOT Eagle-required here, and that is a decision
+#   the troop made, not a reading of the book.** `EAGLE_SLOTS` has 13 slots. CiS
+#   still counts toward the 21 badges Eagle asks for; it just fills none of the
+#   required slots.
+#
+#   The evidence the decision rests on: every Eagle-remaining figure TroopMaster
+#   prints on the troop's whole-troop report reproduces exactly as
+#   `13 - filled`, with CiS dropped from both the list and the Scout's filled
+#   count, and nothing reproduces them at 14. CiS is also the only badge on that
+#   report that ever carries `#` and the only Citizenship badge that never
+#   carries `*`. With CiS dropped, the report's stars and this table agree
+#   exactly — every starred badge is one of the 13 slots' alternates and nothing
+#   outside them is starred.
+#
+#   **Scouts BSA Requirements 2025 still says 14**, listing CiS as (d) at Eagle
+#   requirement 3, so `scout-req` will quote 14 and is not wrong to. The 2026
+#   change list covers merit badge *requirements* only and is silent on the rank
+#   by construction. This skill follows the troop, and the two differ by exactly
+#   one badge for every Scout — say which basis an answer is on when it matters,
+#   and re-check with the Advancement Chair if the book is ever reprinted.
 #
 # * **A position of responsibility counts only for the rank being worked on.**
 #   The book reads "While a Star Scout, serve actively in your troop for six
@@ -72,6 +97,18 @@
 #   blocks only for ranks not yet earned, so "no rows" is completion, never
 #   "nothing done".
 #
+# * **Special awards, National Outdoor Awards and training courses are three
+#   different lists**, and the report keeps them apart, so this does too. The
+#   "NOA Camping Gold" under Special Awards is the award; the "Camping" under
+#   National Outdoor Awards is the segment count behind it. A Scout can hold the
+#   same award twice — the troop's report has one with two NOA Camping Gold
+#   dates — so `awards` counts Scouts, not rows.
+#
+# * **Order of the Arrow is columns on `scouts`, not a table, and every field is
+#   printed whether or not it has a value.** A Scout who is not in the Order
+#   stores as all-NULL rather than as no row, which is why membership is "any
+#   step has a date" rather than "a row exists".
+#
 # --------------------------------------------------------------------------
 # Privacy
 # --------------------------------------------------------------------------
@@ -106,15 +143,18 @@ RANK_LADDER = ["Scout", "Tenderfoot", "Second Class", "First Class",
 # Star, Life, and Eagle ask for a position at all.
 POR_MONTHS = { "Star" => 4, "Life" => 6, "Eagle" => 6 }.freeze
 
-# The 14 Eagle-required slots, each an OR-group of the badges that fill it.
+# The 13 Eagle-required slots, each an OR-group of the badges that fill it.
 # **Match keys, not a copy of the book** — the same list `mbc.rb` carries for
 # counselor coverage; keep the two in step. Requirement text comes from
 # `scout-req`.
+#
+# **Citizenship in Society is deliberately absent**, and that is a decision of
+# the troop's, not a reading of the 2025 book — see the header. It still counts
+# toward the 21 badges Eagle asks for; it just does not fill a required slot.
 EAGLE_SLOTS = [
   ["First Aid"],
   ["Citizenship in the Community"],
   ["Citizenship in the Nation"],
-  ["Citizenship in Society"],
   ["Citizenship in the World"],
   ["Communication"],
   ["Cooking"],
@@ -183,6 +223,11 @@ module DB
       "partials" => query("SELECT * FROM partials WHERE key = ? ORDER BY name", [key]),
       "special_awards" => query("SELECT * FROM special_awards WHERE key = ? ORDER BY earned_on",
                                 [key]),
+      "outdoor_awards" => query("SELECT * FROM outdoor_awards WHERE key = ? ORDER BY name", [key]),
+      "training_courses" => query(
+        "SELECT * FROM training_courses WHERE key = ? ORDER BY completed_on", [key]
+      ),
+      "rank_blocks" => query("SELECT * FROM rank_blocks WHERE key = ? ORDER BY block_order", [key]),
       "leadership" => query("SELECT * FROM leadership WHERE key = ? ORDER BY start_date DESC",
                             [key])
     )
@@ -240,6 +285,24 @@ module Status
     on = date_of(rec["report_date"]) or return nil
     (Date.today - on).to_i
   end
+
+  # TroopMaster's own count of the Eagle-required badges still wanted, printed
+  # in the heading of the block for the rank the Scout is working on. Nil unless
+  # the report printed one. It is a second opinion, never the answer — see the
+  # header on why the two can disagree.
+  def reported_eagle_remaining(rec)
+    block = rec["rank_blocks"].reverse.find { |b| !b["eagle_mb_remaining"].nil? } or return nil
+
+    { rank: block["rank"], remaining: block["eagle_mb_remaining"].to_i }
+  end
+
+  ARROW_STEPS = { "oa_election" => "Elected", "oa_call_out" => "Called out",
+                  "oa_ordeal" => "Ordeal", "oa_brotherhood" => "Brotherhood",
+                  "oa_vigil" => "Vigil" }.freeze
+
+  # The report prints every OA field whether or not it has a value, so a Scout
+  # who is not in the Order stores as all-NULL rather than as no row.
+  def arrow?(rec) = ARROW_STEPS.keys.any? { |field| !rec[field].to_s.empty? }
 
   # Eagle coverage, one entry per slot. Deliberately computed from the badge
   # names rather than from `eagle_required` — see the header.
@@ -404,20 +467,40 @@ module ShowRecord
     puts format("  %-32s %3d%%  %s", "#{part['name']} (#{part['req_year']})",
                 part["percent"], counselor)
     puts "        open: #{part['open_reqts']}"
+    # The Advancement Chair's own note on the partial, and often the only place
+    # that says why the percentage is stuck where it is.
+    puts "        remarks: #{part['remarks']}" unless part["remarks"].to_s.empty?
   end
 
   def other(rec)
-    unless rec["special_awards"].empty?
-      puts "Special awards"
-      rec["special_awards"].each do |award|
-        puts format("  %-32s %s", award["name"], Render.day(award["earned_on"]))
-      end
-      puts
-    end
+    dated_list(rec, "Special awards", "special_awards", "earned_on")
+    dated_list(rec, "National Outdoor Awards", "outdoor_awards", "earned_on")
+    dated_list(rec, "Training courses", "training_courses", "completed_on")
+    arrow(rec)
     puts "Leadership"
     return puts "  (none recorded)" if rec["leadership"].empty?
 
     rec["leadership"].each { |post| position(post) }
+  end
+
+  def dated_list(rec, title, table, column)
+    return if rec[table].empty?
+
+    puts title
+    rec[table].each { |row| puts format("  %-32s %s", row["name"], Render.day(row[column])) }
+    puts
+  end
+
+  def arrow(rec)
+    return unless Status.arrow?(rec)
+
+    puts "Order of the Arrow"
+    Status::ARROW_STEPS.each do |field, label|
+      puts format("  %-32s %s", label, Render.day(rec[field])) unless rec[field].to_s.empty?
+    end
+    puts "  #{format('%-32s %s', 'Vigil name', rec['oa_vigil_name'])}" unless
+      rec["oa_vigil_name"].to_s.empty?
+    puts
   end
 
   def position(post)
@@ -488,10 +571,35 @@ module Query
       rec = DB.record(key)
       slots = Status.eagle_slots(rec)
       done = slots.count { |s| s[:earned] }
-      puts "#{rec['name']} — #{done} of 14 Eagle-required slots filled#{Render.age_note(rec)}"
+      puts "#{rec['name']} — #{done} of #{EAGLE_SLOTS.size} Eagle-required slots " \
+           "filled#{Render.age_note(rec)}"
       slots.each { |slot| puts Render.slot_line(slot) }
+      second_opinion(rec, done)
       puts
     end
+  end
+
+  # TroopMaster prints its own count in the heading of the block for the rank
+  # being worked on. Since the troop adopted the 13-slot list the two agree, so
+  # this is a **guard**, not an explainer: it stays quiet when they match and
+  # speaks up when they stop matching, which would mean either TroopMaster's
+  # configuration or `EAGLE_SLOTS` has moved. Only the Eagle block's figure is
+  # about the same list — a Star or Life heading counts against that rank's own
+  # quota — so the others are reported and not compared.
+  def second_opinion(rec, done)
+    reported = Status.reported_eagle_remaining(rec) or return
+
+    puts format("  The report's %s heading says %d Eagle MB remaining.",
+                reported[:rank], reported[:remaining])
+    return unless reported[:rank] == "Eagle"
+    return if (EAGLE_SLOTS.size - done) == reported[:remaining]
+
+    puts format("  That does NOT match the %d above, and it should — the troop and " \
+                "TroopMaster", EAGLE_SLOTS.size - done)
+    puts "  both count #{EAGLE_SLOTS.size} Eagle-required slots. Something has moved: " \
+         "either TroopMaster's"
+    puts "  Eagle-required list, or EAGLE_SLOTS here. Check before relying on either " \
+         "number."
   end
 
   def por(keys)
@@ -604,6 +712,56 @@ module Troop
       .map { |r| format("%-22s %-12s %s", rec["name"], r["rank"], r["label"]) }
   end
 
+  # The three lists the report keeps apart from Special Awards, rolled up by
+  # item rather than by Scout: the questions they answer are "who has had TLT"
+  # and "who is in the Order", not "what does one Scout hold" — that is `show`.
+  def awards(keys)
+    recs = keys.map { |key| DB.record(key) }
+    grouped(recs, "Special awards", "special_awards")
+    grouped(recs, "National Outdoor Awards", "outdoor_awards")
+    grouped(recs, "Training courses", "training_courses")
+    arrow(recs)
+  end
+
+  def grouped(recs, title, table)
+    rows = recs.flat_map { |rec| rec[table].map { |row| [row["name"], rec["name"]] } }
+    return if rows.empty?
+
+    puts title
+    # Count Scouts, not rows: a Scout can hold the same award twice, as the
+    # troop's report does for a Scout with two NOA Camping Gold dates.
+    rows.group_by(&:first)
+        .transform_values { |pairs| pairs.map(&:last).uniq.sort }
+        .sort_by { |name, who| [-who.size, name] }
+        .each { |name, who| item_line(name, who) }
+    puts
+  end
+
+  # Names carry commas, so they are separated by semicolons; a long list wraps
+  # under the count rather than running off the terminal.
+  def item_line(name, who)
+    head = format("  %-28s %2d  ", name, who.size)
+    indent = " " * head.length
+    who.each_slice(3).with_index do |chunk, i|
+      puts "#{i.zero? ? head : indent}#{chunk.join('; ')}"
+    end
+  end
+
+  # A Scout's furthest step in the Order, which is the one thing anybody asks.
+  def arrow(recs)
+    members = recs.select { |rec| Status.arrow?(rec) }
+    if members.empty?
+      who = recs.size == 1 ? recs.first["name"] : "Nobody imported"
+      return puts "#{who} has no Order of the Arrow record."
+    end
+
+    puts "Order of the Arrow (#{members.size})"
+    members.each do |rec|
+      field, label = Status::ARROW_STEPS.to_a.reverse.find { |f, _| !rec[f].to_s.empty? }
+      puts format("  %-22s %-12s %s", rec["name"], label, Render.day(rec[field]))
+    end
+  end
+
   def roster
     puts format(ROSTER_ROW, name: "SCOUT", rank: "RANK", next_rank: "WORKING ON",
                             open: "OPEN", por: "POR", report: "REPORT")
@@ -636,7 +794,7 @@ USAGE = <<~TEXT
     show     NAME               everything the record holds
     json     [NAME]             the same, machine-readable; everyone if no name
     needs    NAME [--rank R]    what is unsigned for the next rank, or rank R
-    eagle    [NAME]             the 14 Eagle-required slots; everyone if no name
+    eagle    [NAME]             the 13 Eagle-required slots; everyone if no name
     por      [NAME]             credited months toward the next rank's position
 
   The whole troop:
@@ -644,6 +802,8 @@ USAGE = <<~TEXT
     who      LABEL [--rank R]   who still has this requirement unsigned
     badge    BADGE              who earned it, who started it, who has not
     partials [NAME] [--stalled DAYS]   open partials, most idle first
+    awards   [NAME]             special awards, National Outdoor Award segments,
+                                training courses, and Order of the Arrow
 
   NAME matches "Last, First", "First Last", a last name, or a first name; an
   ambiguous name is an error rather than a guess.
@@ -675,6 +835,7 @@ when "needs"    then Query.needs(DB.resolve(target || die(USAGE)), rank)
 when "eagle"    then Query.eagle(all_or_one.call)
 when "por"      then Query.por(all_or_one.call)
 when "partials" then Troop.partials(all_or_one.call, stalled)
+when "awards"   then Troop.awards(all_or_one.call)
 when "badge"    then Troop.badge(target || die(USAGE))
 when "who"      then Troop.who(target || die(USAGE), rank)
 when "roster"   then Troop.roster

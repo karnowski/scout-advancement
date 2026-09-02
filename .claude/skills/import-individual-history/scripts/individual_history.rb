@@ -38,6 +38,15 @@
 #   recovered by clustering on y and then sorting the cells by x — not by
 #   reading lines top to bottom, which interleaves the columns.
 #
+# * **...except a value TroopMaster had to shrink to fit, whose `yMin` is
+#   *lower* than its own label's.** A Scout holding four positions gets a
+#   `Position:` value set at 5.5pt instead of 9.25pt, and poppler reports it
+#   starting 3pt below the label it belongs beside. Clustering on `yMin` alone
+#   drops it into a row of its own, where nothing claims it. Rows therefore also
+#   admit a line whose whole band sits *inside* the band already open —
+#   containment, not proximity, which is safe because the next real row begins
+#   after this one has ended.
+#
 # * **The column x-origins differ from Scout to Scout.** A Scout with long badge
 #   names gets wider columns, so the requirement dates sit at x=216 on one page
 #   and elsewhere on another. Nothing here hard-codes an x. Cells are paired
@@ -62,11 +71,33 @@
 #   requirement set for a rank means *earned*, never *nothing done*, and
 #   `verify` asserts the two lists never overlap.
 #
-# * **`*` on a badge name means Eagle-required; `#` means something else and
-#   this script does not guess.** The page legend defines `#` only for
-#   positions ("Position not credited toward rank"), yet it also turns up on a
-#   partial badge (`Citizenship in Society#`). The marker is stored verbatim and
-#   reported as a note; nothing downstream is allowed to read a meaning into it.
+# * **A block heading is not always just the rank.** Where the rank still wants
+#   Eagle-required badges the heading carries TroopMaster's own count of them —
+#   `Star (2 Eagle MB remaining)` — and where the Scout is past three Palms it
+#   carries an ordinal: `2nd Bronze Palm`, `3rd Gold Palm`. Matching headings
+#   against a fixed list of names misses both, and the miss is silent: the rows
+#   under the heading are read as more of the *previous* block, and the heading
+#   itself, being a lone cell with no date, is filed as an annotation on the
+#   requirement above it. The count is parsed strictly, so a parenthetical form
+#   nobody has seen yet fails loudly instead of being read as part of the name.
+#
+# * **A Scout can have no ranks, no badges, and no partials at all.** A Scout who
+#   has just joined has a blank `Rank:`, no "Completed Ranks" entries, and — this
+#   is the one that bites — **no Merit Badges section whatsoever**, not a heading
+#   reading zero. The tally below cannot be required of them.
+#
+# * **`*` on a badge name means Eagle-required; `#` on a badge means it is
+#   not.** The page legend defines `#` only for positions ("Position not
+#   credited toward rank") and says nothing about badges, so this reading is
+#   inference — but it is well supported: on the whole-troop report
+#   Citizenship in Society is the only badge that ever carries `#` and the only
+#   Citizenship badge that never carries `*`, and TroopMaster's own
+#   Eagle-remaining counts reproduce only with CiS left out of the
+#   Eagle-required list. **The troop has adopted that stance** — `EAGLE_SLOTS`
+#   in `history.rb` and `mbc.rb` carries 13 slots, not the 14 of Eagle
+#   requirement 3 in the 2025 book. This script still stores the marker raw and
+#   acts on nothing; a `#` on any badge *other* than CiS is new and is reported
+#   as a note, because the legend still does not define it.
 #
 # * **A parenthesised line under a requirement is an annotation on the
 #   requirement above it, in the same column.** The Palm block prints
@@ -84,7 +115,26 @@
 # * **Sections are optional and the last one can simply stop.** A Scout with no
 #   leadership history has no Leadership section at all, and the report ends
 #   mid-page. A parser that expects a fixed section order to terminate will read
-#   the next Scout's header as this one's data.
+#   the next Scout's header as this one's data. Beyond the common ones the report
+#   also prints **Order of the Arrow**, **National Outdoor Awards** and
+#   **Training Courses**, each for the few Scouts who have any.
+#
+# * **A partial carries `Remarks:` as well as `Open Reqts:`, and either can
+#   wrap.** A continuation is an unlabelled line, so which field it continues has
+#   to be remembered. Assuming it is always `Open Reqts:` — true before anyone
+#   used Remarks — appends the Advancement Chair's notes to the list of open
+#   requirements, where they read as requirement numbers.
+#
+# * **TroopMaster prints badge names short.** The report says "Fish and
+#   Wildlife" where the book says "Fish and Wildlife Management". An exact
+#   normalized match against the book therefore announces the troop's own
+#   abbreviations as badges the book does not carry; `Book.resolve` falls back to
+#   an unambiguous containment match, the same relaxation `req.rb resolve` makes.
+#
+# * **`Position:` is a comma-separated list.** A Scout holding two jobs reads
+#   "Patrol Leader, Quartermaster". Compared as one string against the Leadership
+#   section it never matches, and every such Scout is reported as holding a
+#   position with no leadership term behind it.
 #
 # * **Freshness is per Scout, not per file.** The report date is printed
 #   top-left of each Scout's first page (`9/1/2026`) and is what a row's
@@ -120,19 +170,40 @@ DB_PATH     = File.join(CACHE_DIR, "individual-history.db")
 REPORTS_DIR = File.join(REPO_ROOT, "reports")
 REQ_SCRIPT  = File.join(REPO_ROOT, ".claude", "skills", "scout-req", "scripts", "req.rb")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STALE_DAYS     = 30    # a plan built on data older than this wants a fresh report
 
 # The rank ladder, in order. Palms follow Eagle and are tracked the same way,
 # so they get requirement blocks of their own.
 RANK_LADDER = ["Scout", "Tenderfoot", "Second Class", "First Class",
                "Star", "Life", "Eagle"].freeze
-PALMS       = ["Bronze Palm", "Gold Palm", "Silver Palm"].freeze
-RANK_BLOCKS = (RANK_LADDER + PALMS).freeze
+
+# Palms cycle Bronze, Gold, Silver and then start over with an ordinal, so a
+# Scout deep into Palms has blocks headed "2nd Bronze Palm", "3rd Gold Palm".
+# Only the first three are unprefixed; the ordinal is the *set*, not the metal.
+PALM_METALS = %w[Bronze Gold Silver].freeze
+PALM_RE     = /\A(?:(\d+)(?:st|nd|rd|th)\s+)?(#{PALM_METALS.join('|')}) Palm\z/o
+
+# A rank block for a rank that still needs Eagle-required badges is headed with
+# TroopMaster's own count of them — "Star (2 Eagle MB remaining)". The
+# parenthetical is matched strictly so a form nobody has seen yet fails loudly
+# rather than being read as part of the rank name.
+BLOCK_HEAD = /\A(.+?)(?:\s+\((\d+) Eagle MB remaining\))?\z/
 
 DATE_SRC = '\d{1,2}/\d{1,2}/\d{2}'
 DATE_RE  = /\A#{DATE_SRC}\z/o
 BLANK    = "__/__/__"
+
+# Where a requirement block sorts: the ladder first, then Palms in the order
+# they are awarded. Returns nil for anything that is not a block heading.
+def block_order(name)
+  if (i = RANK_LADDER.index(name))
+    return i
+  end
+
+  m = PALM_RE.match(name) or return nil
+  RANK_LADDER.size + (((m[1] || 1).to_i - 1) * PALM_METALS.size) + PALM_METALS.index(m[2])
+end
 
 def die(msg)
   warn "error: #{msg}"
@@ -230,21 +301,33 @@ module Extract
       next if words.empty?
 
       xs = line.elements.to_a("word").map { |w| w.attributes["xMin"].to_f }
-      [line.attributes["yMin"].to_f,
+      [line.attributes["yMin"].to_f, line.attributes["yMax"].to_f,
        Cell.new(xs.min, line.attributes["xMax"].to_f, words.join(" "))]
     end
-    cluster(lines).map { |y, cells| Row.new(number, y, cells.sort_by(&:x)) }
+    cluster(lines).map { |y, _ymax, cells| Row.new(number, y, cells.sort_by(&:x)) }
   end
 
+  # Rows are 11.5pt apart and 9.25pt tall, so ordinarily a shared `yMin` (within
+  # a couple of points) is what makes a row. The exception is a value TroopMaster
+  # had to shrink to fit — a long `Position:` list comes back at 5.5pt with a
+  # `yMin` 3pt below its own label's — so a line whose band sits *inside* the
+  # band already open joins it too. Containment, not proximity: the shrunken line
+  # ends no lower than the row it belongs to, while the next real row starts
+  # after this one has ended.
   def cluster(lines)
-    lines.sort_by(&:first).each_with_object([]) do |(y, cell), out|
-      if out.last && (y - out.last[0]).abs <= Y_TOLERANCE
-        out.last[1] << cell
+    lines.sort_by(&:first).each_with_object([]) do |(y, ymax, cell), out|
+      if out.last && (joins?(y, out.last[0]) || inside?(y, ymax, out.last))
+        out.last[2] << cell
+        out.last[1] = [out.last[1], ymax].max
       else
-        out << [y, [cell]]
+        out << [y, ymax, [cell]]
       end
     end
   end
+
+  def joins?(ymin, row_ymin) = (ymin - row_ymin).abs <= Y_TOLERANCE
+
+  def inside?(ymin, ymax, row) = ymin < row[1] && ymax <= row[1] + Y_TOLERANCE
 end
 
 # --------------------------------------------------------------------------
@@ -256,6 +339,7 @@ Scout = Struct.new(
   :nights_camping, :miles_hiking, :service_hours,
   :completed_ranks, :requirements, :merit_badges, :partials,
   :awards, :leadership, :declared_badges, :pages,
+  :rank_blocks, :outdoor_awards, :training, :arrow,
   keyword_init: true
 ) do
   def name = "#{last_name}, #{first_name}"
@@ -285,6 +369,12 @@ module Sections
   ACTIVITY = { "Total Nights Camping:" => :nights_camping,
                "Miles Hiking:" => :miles_hiking,
                "Service Hours:" => :service_hours }.freeze
+
+  # The Order of the Arrow block is six labelled cells; five carry a date and
+  # `Vigil Name:` carries a name, so it is kept as text rather than parsed.
+  ARROW = { "OA Election:" => :election, "Call Out:" => :call_out,
+            "Ordeal:" => :ordeal, "Brotherhood:" => :brotherhood,
+            "Vigil:" => :vigil, "Vigil Name:" => :vigil_name }.freeze
 
   PARTIAL_HEAD = /\A(.+?)\s*\((\d{4})\)\s*:\s*(\d+)%\z/
   RANGE        = /\A(#{DATE_SRC})\s*-\s*(#{DATE_SRC}|present)\s*(\#?)\z/o
@@ -373,12 +463,14 @@ module Sections
     req_id, label = m ? [m[1], m[2]] : [nil, text]
     slot = label.match(/\A(.*?)\s*MB\z/)
     entry = { rank: @block, req_id: req_id, label: label, note: nil,
-              kind: slot ? "badge_slot" : "requirement",
+              kind: slot ? "badge_slot" : "requirement", marker: nil,
               badge: nil, eagle_required: false, x: xpos, y: ypos, seq: nil,
               on: parse_date(date.text), signed: !date.blank? }
     if slot && !slot[1].match?(EMPTY_SLOT)
-      entry[:eagle_required] = slot[1].end_with?("*")
-      entry[:badge] = slot[1].sub(/\*\z/, "").strip
+      named = badge_fields(slot[1])
+      entry[:eagle_required] = named[:eagle_required]
+      entry[:badge]  = named[:name]
+      entry[:marker] = named[:marker]
     end
     entry
   end
@@ -407,6 +499,12 @@ module Sections
       marker: name.include?("#") ? "#" : nil }
   end
 
+  # A partial is a head row followed by any of `Counselor:`, `Open Reqts:` and
+  # `Remarks:`, each of which may wrap onto unlabelled rows of its own. Which
+  # field a wrap continues is remembered in `@partial_field`: before `Remarks:`
+  # existed every continuation belonged to `Open Reqts:`, and a parser that still
+  # assumes that appends the Advancement Chair's notes to the list of open
+  # requirements, where they read as requirement numbers.
   def handle_partials(row)
     first = row.cells.first
     if (head = first.text.match(PARTIAL_HEAD))
@@ -414,9 +512,11 @@ module Sections
     elsif first.text.start_with?("Counselor:")
       partial_counselor(row)
     elsif first.text.start_with?("Open Reqts:")
-      set_open_reqts(row, first.text.sub(/\AOpen Reqts:\s*/, ""))
-    elsif row.one && @scout.partials.last&.dig(:open_reqts)
-      set_open_reqts(row, "#{@scout.partials.last[:open_reqts]} #{first.text}")
+      set_field(row, :open_reqts, first.text.sub(/\AOpen Reqts:\s*/, ""))
+    elsif first.text.start_with?("Remarks:")
+      set_field(row, :remarks, first.text.sub(/\ARemarks:\s*/, ""))
+    elsif row.one && @partial_field && @scout.partials.last&.dig(@partial_field)
+      continue_field(first.text)
     else
       unclaim(row)
     end
@@ -424,10 +524,11 @@ module Sections
 
   def start_partial(row, head)
     f = labelled(row.cells.drop(1), ["Start Date:", "Last Progress:"], row)
+    @partial_field = nil
     @scout.partials << badge_fields(head[1]).merge(
       year: head[2].to_i, percent: head[3].to_i,
       start: parse_date(f["Start Date:"]), last_progress: parse_date(f["Last Progress:"]),
-      counselor: nil, counselor_bsa_id: nil, open_reqts: nil
+      counselor: nil, counselor_bsa_id: nil, open_reqts: nil, remarks: nil
     )
   end
 
@@ -439,10 +540,16 @@ module Sections
     partial[:counselor_bsa_id] = f["BSA ID:"]
   end
 
-  def set_open_reqts(row, text)
+  def set_field(row, field, text)
     partial = @scout.partials.last or return unclaim(row)
 
-    partial[:open_reqts] = text.strip
+    @partial_field  = field
+    partial[field]  = text.strip
+  end
+
+  def continue_field(text)
+    @scout.partials.last[@partial_field] =
+      "#{@scout.partials.last[@partial_field]} #{text}".strip
   end
 
   def handle_activity(row)
@@ -456,6 +563,32 @@ module Sections
       next unclaim_cell(row, label) if date.nil?
 
       @scout.awards << { name: label.text, on: parse_date(date.text) }
+    end
+  end
+
+  # National Outdoor Awards and Training Courses are both plain name/date lists,
+  # printed in the same two-column shape as Special Awards. They are kept apart
+  # from Special Awards because the report keeps them apart: the "NOA Camping
+  # Gold" that appears under Special Awards is the badge, while "Camping" here is
+  # the segment count behind it.
+  def handle_outdoor_awards(row) = collect_dated(row, @scout.outdoor_awards)
+
+  def handle_training(row) = collect_dated(row, @scout.training)
+
+  def collect_dated(row, into)
+    row.pairs.each do |label, date|
+      next unclaim_cell(row, label) if date.nil?
+
+      into << { name: label.text, on: parse_date(date.text) }
+    end
+  end
+
+  # Every OA field is printed whether or not it has a value, so an empty one is
+  # a label with no cell after it and `labelled` simply returns nothing for it.
+  def handle_arrow(row)
+    labelled(row.cells, ARROW.keys, row).each do |label, value|
+      field = ARROW[label]
+      @scout.arrow[field] = field == :vigil_name ? value : parse_date(value)
     end
   end
 
@@ -496,6 +629,16 @@ class Parser
                /\(continued\)\z/,
                /\APage \d+\z/].freeze
 
+  # Which section a row is in decides what it means; a section with no handler
+  # falls through to `unclaim`, and `verify` then refuses the import rather than
+  # letting the rows go quietly missing.
+  HANDLERS = { header: :handle_header, completed_ranks: :handle_completed_ranks,
+               rank_block: :handle_rank_block, merit_badges: :handle_merit_badges,
+               partials: :handle_partials, activity: :handle_activity,
+               awards: :handle_awards, outdoor_awards: :handle_outdoor_awards,
+               training: :handle_training, arrow: :handle_arrow,
+               leadership: :handle_leadership }.freeze
+
   attr_reader :scouts, :report_date, :troop, :unclaimed, :continuations, :source
 
   def initialize(path)
@@ -506,6 +649,7 @@ class Parser
     @scout         = nil
     @section       = nil
     @block         = nil
+    @partial_field = nil
     @column_last   = {}
     Extract.pages(path).each { |rows| rows.each { |row| dispatch(row) } }
     @scouts.each { |scout| order_requirements(scout) }
@@ -517,8 +661,9 @@ class Parser
   # holds requirement 1a beside 5a. Sorting by column, then by row, restores
   # 1a..4d, 5a..11 — the order the requirements are actually numbered in.
   def order_requirements(scout)
-    order = RANK_BLOCKS.each_with_index.to_h
-    scout.requirements.sort_by!.with_index { |r, i| [order.fetch(r[:rank], 99), r[:x], r[:y], i] }
+    scout.requirements.sort_by!.with_index do |r, i|
+      [block_order(r[:rank]) || 99, r[:x], r[:y], i]
+    end
     scout.requirements.each_with_index { |r, i| r[:seq] = i }
   end
 
@@ -528,17 +673,8 @@ class Parser
     return unclaim(row) if @scout.nil?
     return if section_header?(row)
 
-    case @section
-    when :header          then handle_header(row)
-    when :completed_ranks then handle_completed_ranks(row)
-    when :rank_block      then handle_rank_block(row)
-    when :merit_badges    then handle_merit_badges(row)
-    when :partials        then handle_partials(row)
-    when :activity        then handle_activity(row)
-    when :awards          then handle_awards(row)
-    when :leadership      then handle_leadership(row)
-    else unclaim(row)
-    end
+    handler = HANDLERS[@section] or return unclaim(row)
+    send(handler, row)
   end
 
   def furniture?(row)
@@ -560,10 +696,12 @@ class Parser
     return false unless row.cells.first&.text == "Name:"
 
     @scout = Scout.new(completed_ranks: [], requirements: [], merit_badges: [],
-                       partials: [], awards: [], leadership: [], pages: [])
+                       partials: [], awards: [], leadership: [], pages: [],
+                       rank_blocks: [], outdoor_awards: [], training: [], arrow: {})
     @scouts << @scout
     @section = :header
     @block = nil
+    @partial_field = nil
     @column_last = {}
     handle_header(row)
     true
@@ -580,14 +718,27 @@ class Parser
     when "Partial Merit Badges"     then @section = :partials
     when "Activity Totals"          then @section = :activity
     when "Special Awards"           then @section = :awards
+    when "National Outdoor Awards"  then @section = :outdoor_awards
+    when "Training Courses"         then @section = :training
+    when "Order of the Arrow"       then @section = :arrow
     when "Leadership"               then @section = :leadership
-    else
-      return false unless RANK_BLOCKS.include?(cell.text) && @section != :rank_block_body
-
-      @block = cell.text
-      @section = :rank_block
-      @column_last = {}
+    else return rank_block_header?(cell)
     end
+    true
+  end
+
+  # A block heading is a rank or a Palm on its own, optionally followed by
+  # TroopMaster's count of the Eagle-required badges the rank still wants. The
+  # count is recorded rather than discarded — it is the report's own arithmetic,
+  # and the only place the report states it.
+  def rank_block_header?(cell)
+    head = BLOCK_HEAD.match(cell.text) or return false
+    return false if block_order(head[1]).nil?
+
+    @block = head[1]
+    @scout.rank_blocks << { rank: head[1], eagle_mb_remaining: head[2]&.to_i }
+    @section = :rank_block
+    @column_last = {}
     true
   end
 end
@@ -622,6 +773,21 @@ module Book
 
       names.to_h { |n| [normalize(n), n] }
     end
+  end
+
+  # The book's name for a badge, or nil if it carries none. TroopMaster prints
+  # the badge names short — the troop's report says "Fish and Wildlife" where the
+  # book says "Fish and Wildlife Management" — so an exact normalized match is
+  # tried first and then, exactly as `req.rb resolve` does, a containment match,
+  # accepted only when it is unambiguous. Without the fallback the report's
+  # abbreviations are announced as badges the book does not carry, which sends
+  # the Advancement Chair to scouting.org for requirements that are on page 125.
+  def resolve(name)
+    key = normalize(name)
+    return badges[key] if badges.key?(key)
+
+    hits = badges.select { |book_key, _| book_key.include?(key) }.values
+    hits.size == 1 ? hits.first : nil
   end
 end
 
@@ -670,7 +836,7 @@ module Verify
 
   def checks(scout, parser, fails, notes)
     fails << "#{scout.name}: no BSA ID" if scout.bsa_id.to_s.empty?
-    tally(scout, fails)
+    tally(scout, fails, notes)
     ladder(scout, fails)
     slots(scout, fails)
     dates(scout, parser, fails)
@@ -680,10 +846,19 @@ module Verify
     gaps(scout, notes)
   end
 
-  # The one tally the report prints of its own accord.
-  def tally(scout, fails)
+  # The one tally the report prints of its own accord. A Scout with no badges
+  # gets no Merit Badges section at all — not a heading reading zero — so the
+  # tally is simply absent for them, and that is a fact about the Scout rather
+  # than a misparse. It is still a failure if badges were parsed without one,
+  # because then the heading was missed and the count is unchecked.
+  def tally(scout, fails, notes)
     declared = scout.declared_badges
-    return fails << "#{scout.name}: no \"Merit Badges : N\" heading" if declared.nil?
+    if declared.nil?
+      return notes << "#{scout.name}: no merit badges yet" if scout.merit_badges.empty?
+
+      return fails << "#{scout.name}: no \"Merit Badges : N\" heading, but " \
+                      "#{scout.merit_badges.size} badges were parsed"
+    end
     return if declared == scout.merit_badges.size
 
     fails << "#{scout.name}: report declares #{declared} merit badges, " \
@@ -753,9 +928,16 @@ module Verify
   def dated(scout)
     scout.completed_ranks.map { |rank| [rank[:rank], rank[:on]] } +
       scout.merit_badges.map { |badge| [badge[:name], badge[:on]] } +
-      scout.awards.map { |award| [award[:name], award[:on]] } +
       scout.requirements.filter_map { |req| [req[:label], req[:on]] if req[:on] } +
-      scout.leadership.map { |post| ["#{post[:position]} start", post[:from]] }
+      scout.leadership.map { |post| ["#{post[:position]} start", post[:from]] } +
+      dated_recognitions(scout)
+  end
+
+  def dated_recognitions(scout)
+    scout.awards.map { |award| [award[:name], award[:on]] } +
+      scout.outdoor_awards.map { |award| ["National Outdoor Award #{award[:name]}", award[:on]] } +
+      scout.training.map { |course| [course[:name], course[:on]] } +
+      scout.arrow.filter_map { |field, value| ["OA #{field}", value] if value.is_a?(Date) }
   end
 
   def partials(scout, fails)
@@ -777,18 +959,21 @@ module Verify
   # the troop, not a parse error.
   def book(scout, notes)
     scout.badge_names.each do |name|
-      next if Book.badges.key?(normalize(name))
+      next if Book.resolve(name)
 
       notes << "#{scout.name}: #{name} is not in Scouts BSA Requirements 2025 — " \
                "get its requirements from scouting.org"
     end
   end
 
+  # `#` on Citizenship in Society is expected: it is how TroopMaster says the
+  # badge is not Eagle-required, and the troop has adopted that. On any other
+  # badge it is new, the legend does not define it, and it wants a look.
+  NOT_EAGLE_MARKED = "Citizenship in Society"
+
   def markers(scout, notes)
     (scout.merit_badges + scout.partials).select { |badge| badge[:marker] }.each do |badge|
-      notes << "#{scout.name}: #{badge[:name]} carries a \"#{badge[:marker]}\" in the " \
-               "report; the page legend defines that only for positions, so its " \
-               "meaning here is unconfirmed"
+      notes << marker_note(scout, badge)
     end
     scout.requirements.select { |req| req[:note] }.each do |req|
       notes << "#{scout.name}: #{req[:rank]} \"#{req[:label]}\" is annotated #{req[:note]}"
@@ -799,20 +984,36 @@ module Verify
     end
   end
 
+  def marker_note(scout, badge)
+    if badge[:marker] == "#" && normalize(badge[:name]) == normalize(NOT_EAGLE_MARKED)
+      return "#{scout.name}: #{badge[:name]} carries \"#\" — TroopMaster marks it not " \
+             "Eagle-required, which is the stance the troop has adopted (13 slots, " \
+             "not the 2025 book's 14)"
+    end
+
+    "#{scout.name}: #{badge[:name]} carries a \"#{badge[:marker]}\" in the report; the " \
+      "page legend defines that only for positions, so its meaning here is unconfirmed"
+  end
+
   def gaps(scout, notes)
+    notes << "#{scout.name}: no rank yet" if scout.rank.to_s.empty?
     notes << "#{scout.name}: no date of birth in the report" if scout.dob.nil?
     notes << "#{scout.name}: no date joined unit in the report" if scout.joined.nil?
     notes << "#{scout.name}: no leadership history in the report" if scout.leadership.empty?
-    return unless current_gap?(scout)
+    missing = uncredited_positions(scout)
+    return if missing.empty?
 
-    notes << "#{scout.name}: holds a current position (#{scout.position}) that is not " \
-             "in the leadership list"
+    notes << "#{scout.name}: holds #{missing.join(', ')} but the leadership list " \
+             "shows no current term for it"
   end
 
-  def current_gap?(scout)
-    return false if scout.position.to_s.empty?
-
-    scout.leadership.none? { |post| post[:current] && post[:position] == scout.position }
+  # `Position:` is a comma-separated list when a Scout holds more than one --
+  # "Patrol Leader, Quartermaster" -- so it is compared position by position, not
+  # as one string, which would report every multi-position Scout as a gap.
+  def uncredited_positions(scout)
+    held = scout.position.to_s.split(",").map(&:strip).reject(&:empty?)
+    current = scout.leadership.select { |post| post[:current] }.map { |post| post[:position] }
+    held - current
   end
 end
 
@@ -820,8 +1021,8 @@ end
 # storage
 # --------------------------------------------------------------------------
 module DB
-  CHILD_TABLES = %w[completed_ranks requirements merit_badges partials
-                    special_awards leadership].freeze
+  CHILD_TABLES = %w[completed_ranks rank_blocks requirements merit_badges partials
+                    special_awards outdoor_awards training_courses leadership].freeze
 
   module_function
 
@@ -857,6 +1058,12 @@ module DB
       nights_camping REAL,
       miles_hiking   REAL,
       service_hours  REAL,
+      oa_election    TEXT,                   -- the Order of the Arrow block; every
+      oa_call_out    TEXT,                   -- field is printed whether or not it
+      oa_ordeal      TEXT,                   -- has a value, so NULL here means the
+      oa_brotherhood TEXT,                   -- report printed the label and nothing
+      oa_vigil       TEXT,                   -- after it
+      oa_vigil_name  TEXT,
       troop          TEXT NOT NULL DEFAULT '',
       report_date    TEXT NOT NULL,          -- printed on the report; what freshness means
       source_file    TEXT NOT NULL,
@@ -865,10 +1072,15 @@ module DB
     CREATE TABLE IF NOT EXISTS completed_ranks (
       key TEXT NOT NULL, rank TEXT NOT NULL, rank_order INTEGER NOT NULL, earned_on TEXT
     );
+    CREATE TABLE IF NOT EXISTS rank_blocks (
+      key TEXT NOT NULL, rank TEXT NOT NULL, block_order INTEGER NOT NULL,
+      eagle_mb_remaining INTEGER             -- TroopMaster's own count, when printed
+    );
     CREATE TABLE IF NOT EXISTS requirements (
       key TEXT NOT NULL, seq INTEGER NOT NULL, rank TEXT NOT NULL,
       req_id TEXT, label TEXT NOT NULL, kind TEXT NOT NULL,
       badge TEXT, badge_norm TEXT, eagle_required INTEGER NOT NULL DEFAULT 0,
+      marker TEXT,
       completed_on TEXT,                     -- NULL when the report prints __/__/__
       signed INTEGER NOT NULL DEFAULT 0,     -- ...which is what this distinguishes
       note TEXT
@@ -881,10 +1093,16 @@ module DB
       key TEXT NOT NULL, name TEXT NOT NULL, norm TEXT NOT NULL,
       eagle_required INTEGER NOT NULL DEFAULT 0, marker TEXT,
       req_year INTEGER, percent INTEGER, start_date TEXT, last_progress TEXT,
-      counselor TEXT, counselor_bsa_id TEXT, open_reqts TEXT
+      counselor TEXT, counselor_bsa_id TEXT, open_reqts TEXT, remarks TEXT
     );
     CREATE TABLE IF NOT EXISTS special_awards (
       key TEXT NOT NULL, name TEXT NOT NULL, earned_on TEXT
+    );
+    CREATE TABLE IF NOT EXISTS outdoor_awards (
+      key TEXT NOT NULL, name TEXT NOT NULL, earned_on TEXT
+    );
+    CREATE TABLE IF NOT EXISTS training_courses (
+      key TEXT NOT NULL, name TEXT NOT NULL, completed_on TEXT
     );
     CREATE TABLE IF NOT EXISTS leadership (
       key TEXT NOT NULL, position TEXT NOT NULL, start_date TEXT, end_date TEXT,
@@ -943,25 +1161,36 @@ module DB
   SCOUT_COLUMNS = %w[key name last_name first_name bsa_id patrol email phone
                      rank rank_date position dob age joined
                      nights_camping miles_hiking service_hours
+                     oa_election oa_call_out oa_ordeal oa_brotherhood
+                     oa_vigil oa_vigil_name
                      troop report_date source_file imported_at].freeze
 
+  ARROW_FIELDS = %i[election call_out ordeal brotherhood vigil vigil_name].freeze
+
   def insert_scout(key, scout, parser, now)
-    values = [key, scout.name, scout.last_name, scout.first_name, scout.bsa_id.to_s,
-              scout.patrol.to_s, scout.email.to_s, scout.phone.to_s,
-              scout.rank.to_s, scout.rank_date&.to_s, scout.position.to_s,
-              scout.dob&.to_s, scout.age, scout.joined&.to_s,
-              scout.nights_camping, scout.miles_hiking, scout.service_hours,
+    values = [key, *scout_values(scout), *arrow_values(scout),
               parser.troop.to_s, parser.report_date.to_s, File.basename(parser.source), now]
     placeholders = (["?"] * SCOUT_COLUMNS.size).join(", ")
     handle.execute("INSERT INTO scouts (#{SCOUT_COLUMNS.join(', ')}) VALUES (#{placeholders})",
                    values)
   end
 
+  def scout_values(scout)
+    [scout.name, scout.last_name, scout.first_name, scout.bsa_id.to_s,
+     scout.patrol.to_s, scout.email.to_s, scout.phone.to_s,
+     scout.rank.to_s, scout.rank_date&.to_s, scout.position.to_s,
+     scout.dob&.to_s, scout.age, scout.joined&.to_s,
+     scout.nights_camping, scout.miles_hiking, scout.service_hours]
+  end
+
+  def arrow_values(scout) = ARROW_FIELDS.map { |field| scout.arrow[field]&.to_s }
+
   def insert_children(key, scout)
     insert_ranks(key, scout)
     insert_requirements(key, scout)
     insert_badges(key, scout)
     insert_awards(key, scout)
+    insert_leadership(key, scout)
   end
 
   def insert_ranks(key, scout)
@@ -969,14 +1198,19 @@ module DB
       handle.execute("INSERT INTO completed_ranks VALUES (?, ?, ?, ?)",
                      [key, rank[:rank], RANK_LADDER.index(rank[:rank]) || 99, rank[:on]&.to_s])
     end
+    scout.rank_blocks.each do |block|
+      handle.execute("INSERT INTO rank_blocks VALUES (?, ?, ?, ?)",
+                     [key, block[:rank], block_order(block[:rank]) || 99,
+                      block[:eagle_mb_remaining]])
+    end
   end
 
   def insert_requirements(key, scout)
     scout.requirements.each do |req|
-      handle.execute("INSERT INTO requirements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      handle.execute("INSERT INTO requirements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      [key, req[:seq], req[:rank], req[:req_id], req[:label], req[:kind],
                       req[:badge], req[:badge] && normalize(req[:badge]),
-                      req[:eagle_required] ? 1 : 0, req[:on]&.to_s,
+                      req[:eagle_required] ? 1 : 0, req[:marker], req[:on]&.to_s,
                       req[:signed] ? 1 : 0, req[:note]])
     end
   end
@@ -988,11 +1222,12 @@ module DB
                       badge[:eagle_required] ? 1 : 0, badge[:marker], badge[:on]&.to_s])
     end
     scout.partials.each do |part|
-      handle.execute("INSERT INTO partials VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      handle.execute("INSERT INTO partials VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      [key, part[:name], normalize(part[:name]),
                       part[:eagle_required] ? 1 : 0, part[:marker], part[:year], part[:percent],
                       part[:start]&.to_s, part[:last_progress]&.to_s,
-                      part[:counselor], part[:counselor_bsa_id], part[:open_reqts]])
+                      part[:counselor], part[:counselor_bsa_id], part[:open_reqts],
+                      part[:remarks]])
     end
   end
 
@@ -1001,6 +1236,17 @@ module DB
       handle.execute("INSERT INTO special_awards VALUES (?, ?, ?)",
                      [key, award[:name], award[:on]&.to_s])
     end
+    scout.outdoor_awards.each do |award|
+      handle.execute("INSERT INTO outdoor_awards VALUES (?, ?, ?)",
+                     [key, award[:name], award[:on]&.to_s])
+    end
+    scout.training.each do |course|
+      handle.execute("INSERT INTO training_courses VALUES (?, ?, ?)",
+                     [key, course[:name], course[:on]&.to_s])
+    end
+  end
+
+  def insert_leadership(key, scout)
     scout.leadership.each do |post|
       handle.execute("INSERT INTO leadership VALUES (?, ?, ?, ?, ?, ?)",
                      [key, post[:position], post[:from]&.to_s, post[:to]&.to_s,

@@ -68,7 +68,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
 - `.claude/skills/individual-history/` — answers questions about what that
   database holds, for one Scout or across the troop: what a rank still needs,
   Eagle-required slot coverage, position-of-responsibility tenure, idle
-  partials.  It reads; it does not plan.
+  partials, and the awards, National Outdoor Award segments, training courses
+  and Order of the Arrow standing the report also carries.  It reads; it does
+  not plan.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -163,8 +165,10 @@ document of its own:
   both directions.  The report lists only badges that *have* a counselor, so it
   also loads the full badge list from `req.rb list --kind badge` — that is what
   distinguishes "nobody counsels it" from "not a merit badge". `EAGLE_SLOTS`
-  carries the 14 Eagle-required slots as match keys, because a badge absent from
-  the report carries no Eagle star to read.
+  carries the Eagle-required slots as match keys, because a badge absent from
+  the report carries no Eagle star to read. It holds **13 slots, not the 14 of
+  Eagle requirement 3** — the troop does not count Citizenship in Society (see
+  `history.rb` below), and this table must stay in step with the one there.
 - **`req.rb`** (scout-req) — indexes every rank, merit badge, and award in the
   requirements book by reading font sizes out of `pdftohtml -xml`, since the book
   numbers nothing and its headings are otherwise indistinguishable from body
@@ -225,19 +229,25 @@ document of its own:
   so every cell is its own `<line>` and a row is the set of lines sharing a
   `yMin` — read top to bottom the columns interleave. `-layout` cannot be used
   at all: in the merit badge list a long name runs into its own date with a
-  single space between them, the same as the space inside the name. Its
+  single space between them, the same as the space inside the name. Rows also
+  admit a line whose band sits *inside* the band already open, because a value
+  TroopMaster shrank to fit — a `Position:` naming four jobs — is reported as
+  starting *below* the label beside it. A block heading is not always just the
+  rank: it carries TroopMaster's own count of the Eagle-required badges still
+  wanted (`Star (2 Eagle MB remaining)`) and, past three Palms, an ordinal
+  (`2nd Bronze Palm`), and a parser that matches headings against a fixed list
+  of names misses both **silently** — the rows below join the previous block and
+  the heading is filed as an annotation on the requirement above it. Its
   `badges` subcommand prints every badge name for `req.rb check` to read, and
   its freshness is **per Scout** — a record carries the date printed on the
   report that supplied it, so an import of an older report leaves a Scout alone
   rather than rewinding them.
 - **`history.rb`** (individual-history) — the only *reader* of
-  `individual-history.db`; it never writes and never opens a PDF.  Two of its
+  `individual-history.db`; it never writes and never opens a PDF.  Three of its
   answers carry logic that is wrong if reinvented casually.  **Eagle coverage is
-  computed against `EAGLE_SLOTS`, never from the `eagle_required` column** — the
-  flag comes from the `*` TroopMaster prints, and the report does not always
-  print it (Citizenship in Society carries `#` on the current report, so it
-  stores as 0 for a badge that is squarely Eagle-required); three of the 14
-  slots are also OR-groups, so 14 slots are not 14 badges.  **POR tenure is a
+  computed against `EAGLE_SLOTS`, never from the `eagle_required` column** —
+  three of the slots are OR-groups, so slots are not badges, and a badge the
+  report never names carries no flag at all.  **POR tenure is a
   union of intervals clipped to the Scout's own `rank_date`** — the book reads
   "While a Star Scout, serve actively... for six months", so earlier service
   counts toward the rank it was served under, and a Scout holding Bugler and
@@ -245,6 +255,22 @@ document of its own:
   `POR_MONTHS` and `EAGLE_SLOTS` are match keys and thresholds, not the book;
   `EAGLE_SLOTS` deliberately duplicates the table in `mbc.rb` and the two must
   stay in step.
+
+  Third, and the one that departs from the printed book: **`EAGLE_SLOTS` holds
+  13 slots, because the troop does not count Citizenship in Society as
+  Eagle-required.**  CiS counts toward the 21 badges Eagle asks for and fills no
+  required slot.  Scouts BSA Requirements 2025 says otherwise — it lists CiS as
+  (d) of 14 at Eagle requirement 3 — so `scout-req` will quote 14 and is not
+  wrong to; the 2026 change list covers merit badge *requirements* only and is
+  silent on the rank by construction.  **This is a decision of the troop's, not
+  a reading of a document**, and it rests on the whole-troop report: every
+  Eagle-remaining figure TroopMaster prints reproduces exactly as `13 - filled`
+  and none at 14; CiS is the only badge that ever carries `#` and the only
+  Citizenship badge that never carries `*`; and with CiS dropped the report's
+  stars and the table agree exactly.  `eagle` still prints TroopMaster's figure
+  beside its own — they now agree for every Scout, so that line is a **guard**:
+  a mismatch means one of the two lists has moved.  Do not "restore" the 14th
+  slot to match the book without raising it with the Advancement Chair.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -301,6 +327,9 @@ Two rules generalize across all of them:
   some section, that completed ranks are a prefix of the ladder and agree with
   the header, and that a rank never has both a completion date and a printed
   requirement block — the report prints blocks only for ranks not yet earned.
+  The tally is the one check the report can withhold: a Scout who has just
+  joined gets **no Merit Badges section at all**, not a heading reading zero, so
+  a missing tally is a note unless badges were parsed anyway.
   `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
   identical everywhere, every phone-code line accounted for. `eagle.rb` has no
@@ -365,9 +394,9 @@ which would otherwise read as "not tracked" and be mistaken for a zero.
 
 `individual_history.rb` pipes `badges` through `req.rb check` for the same
 reason `target-eagle` does, and more urgently: a TroopMaster report is where a
-post-2025 badge enters unannounced, and 12 of the 39 badges on the troop's
-current Individual History report changed effective Jan. 1, 2026, so the 2025
-text is out of date for nearly a third of them.
+post-2025 badge enters unannounced, and 45 of the 95 badges on the troop's
+current whole-troop Individual History report changed effective Jan. 1, 2026, so
+the 2025 text is out of date for nearly half of them.
 
 `mbc.rb` and `inventory.rb` are the other consumers, and both use `req.rb list
 --kind badge` rather than `check` — they need the *whole* badge list, because
@@ -379,8 +408,11 @@ requirements from scouting.org.
 
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
-`RANK_LADDER` in `individual_history.rb`, and `EAGLE_SLOTS` and `POR_MONTHS` in
-`history.rb` — are **match keys, not a second copy of the book.** They exist so a parser can identify a column or find the Scouts on
+`RANK_LADDER` and `PALM_METALS` in `individual_history.rb`, and `EAGLE_SLOTS`
+and `POR_MONTHS` in `history.rb` — are **match keys, not a second copy of the
+book.**  The two `EAGLE_SLOTS` tables are the one place the repo deliberately
+*departs* from the book rather than abbreviating it, and the reason is written
+out at `history.rb` above. They exist so a parser can identify a column or find the Scouts on
 a clock. Their labels are far too short to plan from and are not maintained
 against the book; the text that governs comes from `scout-req`. Do not quote one
 into a plan, and do not delete them either — the parsers do not work without

@@ -63,12 +63,20 @@ bare surname returns **everyone** who has it, and the troop currently has two
 Holmeses; when more than one person comes back, say so rather than picking one.
 
 `gaps --eagle` is the one to run unprompted when the conversation is about a
-Life Scout or an Eagle timeline.  It reports the **14 Eagle-required slots**,
-not 14 badges: three of them are OR-groups (Emergency Preparedness OR
+Life Scout or an Eagle timeline.  It reports the **13 Eagle-required slots**,
+not 13 badges: three of them are OR-groups (Emergency Preparedness OR
 Lifesaving; Environmental Science OR Sustainability; Swimming OR Hiking OR
 Cycling), and one counselor for any alternate fills the slot.  A slot with no
 counselor at all is a real scheduling problem worth raising with the
 Advancement Chair.
+
+**Thirteen, not the fourteen printed at Eagle requirement 3.**  The troop does
+not count Citizenship in Society as filling an Eagle-required slot — it counts
+toward the 21 badges like any other.  That is a decision of the troop's, set
+out in full in the `individual-history` skill, and `EAGLE_SLOTS` here carries
+the same 13; **the two tables must stay in step.**  A badge needs a counselor
+whether or not it is Eagle-required, so CiS still shows up under `who` and
+under a plain `gaps` — it simply no longer counts as an uncovered Eagle slot.
 
 ## Requirement text
 
@@ -118,8 +126,9 @@ All verified against the 8/3/2026 MBC Grouped By Badge report.
   `M/D/YYYY`.  It is what dates the data — not the file's mtime.
 - **`*` after a badge name is TroopMaster's Eagle-required marker.**  It is only
   ever on a badge the report prints, which is why `EAGLE_SLOTS` exists in the
-  script: Citizenship in Society is Eagle-required and absent from this report
-  entirely, so no star could tell you the slot is empty.
+  script: a badge absent from the report entirely carries no star, so no star
+  could tell you its slot is empty.  Citizenship in Society is absent from this
+  report, and is also no longer one of the slots — see above.
 - **The report lists only badges that have at least one counselor.**  It is not
   a list of merit badges, and a badge's absence means "nobody counsels it," not
   "no such badge."  Telling those two apart is why the script reads the full

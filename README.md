@@ -155,7 +155,7 @@ counsels a badge, and what one counselor covers.  Because the report lists only
 badges that *have* a counselor, it reads the full badge list from `scout-req` at
 load time — that is what lets it tell "nobody in this troop counsels it" apart
 from "that is not a merit badge," which are very different things to tell a
-Scout.  `gaps --eagle` reports coverage of the 14 Eagle-required *slots*,
+Scout.  `gaps --eagle` reports coverage of the 13 Eagle-required *slots*,
 counting the OR-groups correctly.
 
 The skill answers *who counsels*, never *what the requirements are*; requirement
@@ -274,14 +274,19 @@ has a given badge, whose partials have gone idle.  It reads the database and
 never opens a PDF.
 
 Two of its answers are ones nobody wants to work out by hand.  **Eagle coverage**
-is computed against the 14 Eagle-required slots rather than from the report's
-own star, because three slots are OR-groups (Emergency Preparedness *or*
-Lifesaving, and so on) and because the star is not always printed — on the
-troop's current report Citizenship in Society carries a different marker
-entirely, so the stored flag reads 0 for a badge that plainly counts.  And
-**position-of-responsibility tenure** counts only service since the Scout earned
-the rank they hold now, with overlapping terms merged: a Scout who held Bugler
-and Patrol Leader over the same six months served six months, not twelve.
+is computed against the Eagle-required *slots* rather than from the report's own
+star, because three slots are OR-groups (Emergency Preparedness *or* Lifesaving,
+and so on) and because a badge the report never names carries no star at all.
+And **position-of-responsibility tenure** counts only service since the Scout
+earned the rank they hold now, with overlapping terms merged: a Scout who held
+Bugler and Patrol Leader over the same six months served six months, not twelve.
+
+The slot list has **13 entries, not the 14 printed at Eagle requirement 3**: this
+troop does not count Citizenship in Society as filling an Eagle-required slot,
+though it still counts toward the 21 badges Eagle asks for.  That is a decision
+of the troop's rather than a reading of the book, it matches what TroopMaster
+itself computes, and the `individual-history` skill sets out the evidence and
+keeps TroopMaster's own figure on screen as a cross-check.
 
 Like the importer it reports rather than plans — it says what is signed off and
 how many months have been served, and leaves what to do about it to

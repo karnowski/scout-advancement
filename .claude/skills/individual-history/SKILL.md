@@ -1,6 +1,6 @@
 ---
 name: individual-history
-description: Answer questions about a Scout's advancement record — ranks, requirement sign-offs, merit badges and partials, Eagle-required coverage, leadership tenure, awards — from the imported TroopMaster "Individual History" data.
+description: Answer questions about a Scout's advancement record — ranks, requirement sign-offs, merit badges and partials, Eagle-required coverage (13 slots; the troop does not count Citizenship in Society), leadership tenure, awards — from the imported TroopMaster "Individual History" data.
 ---
 
 # Individual history
@@ -32,17 +32,19 @@ repo's gems (`bundle install` from the repository root) and no PDF tools at all.
 ruby scripts/history.rb show     NAME               everything the record holds
 ruby scripts/history.rb json     [NAME]             the same, machine-readable
 ruby scripts/history.rb needs    NAME [--rank R]    what is unsigned for the next rank, or rank R
-ruby scripts/history.rb eagle    [NAME]             the 14 Eagle-required slots
+ruby scripts/history.rb eagle    [NAME]             the 13 Eagle-required slots
 ruby scripts/history.rb por      [NAME]             credited months toward the next rank's position
 ruby scripts/history.rb roster                      rank, what each is working on, open count, POR
 ruby scripts/history.rb who      LABEL [--rank R]   who still has this requirement unsigned
 ruby scripts/history.rb badge    BADGE              who earned it, who started it, who has not
 ruby scripts/history.rb partials [NAME] [--stalled DAYS]   open partials, most idle first
+ruby scripts/history.rb awards   [NAME]             special awards, National Outdoor Award
+                                                    segments, training, Order of the Arrow
 ```
 
-The per-Scout commands (`json`, `eagle`, `por`, `partials`) cover **everyone
-imported** when the name is left off, which is usually how a troop-wide question
-gets answered.
+The per-Scout commands (`json`, `eagle`, `por`, `partials`, `awards`) cover
+**everyone imported** when the name is left off, which is usually how a
+troop-wide question gets answered.
 
 `NAME` matches `"Rivera, Sam"`, `"Sam Rivera"`, `Rivera`, or `Sam`.  A name that
 matches two Scouts is an error naming both, never a guess — an answer given
@@ -81,22 +83,59 @@ answering.
   schedule — it is good until the Scout turns 18, though a requirement *year*
   that has since changed is a real complication.  `idle 592d` means nobody has
   recorded progress in that long, which is worth a conversation, not a deadline.
+- **A partial's `remarks` line is the Advancement Chair's own note**, carried
+  through verbatim from the report — "Completed one ride for 6Bd at WinterBlast
+  26".  It often says the thing the percentage does not.
+- **Special awards, National Outdoor Awards, and training courses are three
+  separate lists**, because the report keeps them separate.  The "NOA Camping
+  Gold" under Special Awards is the award; the "Camping" under National Outdoor
+  Awards is the segment count behind it.  `awards` rolls all three up across the
+  troop, plus Order of the Arrow standing, and counts *Scouts* rather than rows
+  — a Scout can hold the same award twice.
+
+## Citizenship in Society is not Eagle-required here
+
+**The troop counts 13 Eagle-required slots, not 14.**  Citizenship in Society
+counts toward the 21 merit badges Eagle asks for; it fills no required slot.
+
+This is a decision of the troop's, and it departs from the printed book.
+**Scouts BSA Requirements 2025 lists Citizenship in Society as (d) of 14 at
+Eagle requirement 3**, so `scout-req` will quote 14 and is not wrong to — the
+2026 change list covers merit badge *requirements* only and is silent on the
+rank by construction.  When it matters, say which basis an answer is on.
+
+What the decision rests on:
+
+- Every Eagle-remaining figure TroopMaster prints on the troop's whole-troop
+  report reproduces exactly as `13 - filled`, with CiS dropped from both the
+  slot list and the Scout's filled count.  Nothing reproduces them at 14.
+- CiS is the only badge on that report that ever carries `#`, and the only
+  Citizenship badge that never carries `*`.
+- With CiS dropped, the report's stars and `EAGLE_SLOTS` agree exactly: every
+  starred badge is one of the 13 slots' alternates, and nothing outside them is
+  starred.
+
+`eagle` still prints TroopMaster's own figure beside its own.  The two now
+**agree for every Scout**, so that line is a guard: if it ever reports a
+mismatch, either TroopMaster's Eagle-required list or `EAGLE_SLOTS` has moved,
+and neither number should be trusted until you know which.
 
 ## Eagle coverage is computed from the badge names, not from the star
 
-`eagle` reports the **14 Eagle-required slots**, and three of them are
+`eagle` reports the **13 Eagle-required slots**, and three of them are
 OR-groups: Emergency Preparedness OR Lifesaving; Environmental Science OR
 Sustainability; Swimming OR Hiking OR Cycling.  Any one alternate fills its
-slot, so 14 slots are not 14 badges, and counting a Scout's Eagle-required
+slot, so 13 slots are not 13 badges, and counting a Scout's Eagle-required
 badges overstates what is left.  The line names whichever alternate the Scout
 actually holds.
 
-**Do not answer this question from the `eagle_required` flag in the database.**
-That flag is set from the `*` TroopMaster prints beside a badge name, and the
-report does not always print it — on the troop's current report Citizenship in
-Society appears with a `#` instead, so it is stored `eagle_required = 0` for a
-badge that is squarely Eagle-required.  `eagle` matches names against the slot
-list for exactly this reason.
+**Do not answer this question from the `eagle_required` flag in the database**,
+even though it now agrees with the slot list.  On the current report every
+starred badge is one of the 13 slots' alternates and nothing outside them is
+starred — but the OR-groups mean a count of flags is not a count of slots, and
+**a badge the report never names carries no flag at all**: an Eagle-required
+badge a Scout has not started simply is not in the rows.  `eagle` matches names
+against the slot list for both reasons.
 
 ## Position of responsibility
 
@@ -166,13 +205,18 @@ invented.
   displayed, never counted.
 - **`EAGLE_SLOTS` duplicates the table in `mbc.rb` on purpose.**  Both are match
   keys against badge names — one for counselor coverage, one for badge
-  coverage.  Keep the two in step; neither is a copy of the book.
+  coverage.  Keep the two in step; neither is a copy of the book, and **both
+  now carry 13 slots** with Citizenship in Society removed.
 - **`normalize` must stay identical** to the one in `req.rb`, `mbc.rb`,
   `inventory.rb`, and `individual_history.rb`.  Dropping "and"/"the" is what
   makes TroopMaster's `Citizenship In Nation` resolve against the book's
   `Citizenship in the Nation`, and its `Fly Fishing` against `Fly-Fishing`.
 - **Tenure is a union of intervals, clipped to the Scout's rank date** — both
   halves matter, and the troop's current report exercises both.
+- **Order of the Arrow is columns on `scouts`, not a table**, and the report
+  prints every OA field whether or not it has a value — so a Scout who is not in
+  the Order stores as all-NULL rather than as no row.  Membership is "some step
+  has a date", never "a row exists".
 - **Months are reported as days ÷ 30.44**, to one decimal.  It is a measure of
   elapsed time, not a count of calendar months, and it is there to show whether
   a Scout is close — not to settle a sign-off.

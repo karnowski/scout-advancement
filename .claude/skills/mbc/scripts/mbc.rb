@@ -82,16 +82,23 @@ PHONE_TYPES = { "C" => "cell", "H" => "home", "W" => "work", "B" => "business" }
 # TroopMaster stars the Eagle-required badges it prints.
 EAGLE_STAR = /\*\z/
 
-# The 14 Eagle-required slots, from Eagle rank requirement 3. These are **match
-# keys, not requirement text** — they exist so `gaps --eagle` can tell a covered
-# slot from an uncovered one, including for a badge that is absent from the
-# report entirely and therefore carries no star. Requirement text comes from
-# `scout-req`. Each inner list is one slot; any one of its badges fills it.
+# The 13 Eagle-required slots. These are **match keys, not requirement text** —
+# they exist so `gaps --eagle` can tell a covered slot from an uncovered one,
+# including for a badge that is absent from the report entirely and therefore
+# carries no star. Requirement text comes from `scout-req`. Each inner list is
+# one slot; any one of its badges fills it.
+#
+# **Citizenship in Society is deliberately absent.** The troop counts 13
+# Eagle-required slots, not the 14 of Eagle requirement 3 in Scouts BSA
+# Requirements 2025 — CiS counts toward the 21 badges but fills no required
+# slot. The reasoning, and the evidence it rests on, is in `history.rb`, which
+# carries the same table; **the two must stay in step.** A badge still needs a
+# counselor whether or not it is Eagle-required, so CiS is still reported by
+# `who` and by a plain `gaps`; it just no longer shows up under `--eagle`.
 EAGLE_SLOTS = [
   ["First Aid"],
   ["Citizenship in the Community"],
   ["Citizenship in the Nation"],
-  ["Citizenship in Society"],
   ["Citizenship in the World"],
   ["Communication"],
   ["Cooking"],
