@@ -18,6 +18,23 @@ Claude skills to help the troop Advancement Chair and Scoutmasters communicate a
    accidentally commit another troop's details.
 3. Drop the TroopMaster reports any skills need into `reports/` (also gitignored).
 
+## Troopmaster Reports
+
+#### Custom Filters
+
+First off, make sure to create or update two custom filters in TroopMaster:
+- **Target First Class [date]** - Scouts with no rank or the Scout, Tenderfoot, or Second Class rank.  Does NOT include scouts in First Class.  This filter will be used for the "Target First Class" report.
+- **Target Eagle [date]** - Scouts with First Class, Star, or Life rank.  This filter will be used for the "Target Eagle" report.
+
+The "[date]" in the filter name is the date of when the filter was last updated.  Since custom filters in Troopmaster are basically just lists of specific scouts, they must be updated on rank-ups and scout additions.
+
+## Base Reports
+
+Then you run the following reports in TroopMaster and save them to the `reports/` directory:
+- **Target First Class** - Use the "Filter - Target First Class [date]" to choose the correct scouts.  Save the report as `reports/target-first-class-[date].pdf`.
+- **Target Eagle** - Use the "Filter - Target Eagle [date]" to choose the correct scouts.  Save the report as `reports/target-eagle-[date].pdf`.
+
+
 ## Skills
 
 ### `guide-to-advancement`
