@@ -242,9 +242,10 @@ every rank *not* yet earned with its sign-off date, the merit badges earned, the
 partials with their open requirements and counselor, camping/hiking/service
 totals, special awards, and the full leadership history with dates.
 
-It is the loading dock, not the planner: it never says what a Scout should work
-on next and never quotes a requirement.  `generate-advancement-plan` does that,
-reading what this stored.
+It is the loading dock: it parses, verifies, and stores.  It never says what a
+Scout should work on next and never quotes a requirement.  Asking what it stored
+is `individual-history`; planning from the answers is
+`generate-advancement-plan`.
 
 Two things about it are worth knowing.  The report is a **table that only
 coordinates can parse** — in the merit badge list a long name runs into its own
@@ -258,6 +259,33 @@ flags anyone whose data is too old to plan from.
 Because a misparse of a grid this dense looks like a Scout who is behind rather
 than like an error, `import` runs `verify` first and refuses to store anything
 that fails it.
+
+### `individual-history`
+
+Answers **"what does the record actually say?"** from what
+`import-individual-history` stored — for one Scout, or for everyone at once.  It
+is the skill for a Scoutmaster conference, for a parent asking what their Scout
+still needs, and for deciding who is ready for a board of review.
+
+`show` prints a Scout's whole record and `needs` narrows it to what is unsigned
+for their next rank.  `roster`, `who`, `badge`, and `partials` ask the same
+questions across the troop — who still owes a position of responsibility, who
+has a given badge, whose partials have gone idle.  It reads the database and
+never opens a PDF.
+
+Two of its answers are ones nobody wants to work out by hand.  **Eagle coverage**
+is computed against the 14 Eagle-required slots rather than from the report's
+own star, because three slots are OR-groups (Emergency Preparedness *or*
+Lifesaving, and so on) and because the star is not always printed — on the
+troop's current report Citizenship in Society carries a different marker
+entirely, so the stored flag reads 0 for a badge that plainly counts.  And
+**position-of-responsibility tenure** counts only service since the Scout earned
+the rank they hold now, with overlapping terms merged: a Scout who held Bugler
+and Patrol Leader over the same six months served six months, not twelve.
+
+Like the importer it reports rather than plans — it says what is signed off and
+how many months have been served, and leaves what to do about it to
+`generate-advancement-plan`.
 
 ### `badge-inventory`
 

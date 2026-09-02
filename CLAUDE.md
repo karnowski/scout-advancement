@@ -65,6 +65,10 @@ plans and in answers to the Advancement Chair; they just never reach git.
   History" report into a local SQLite database, one record per Scout, each
   stamped with the date of the report it came from.  It stores; it does not
   plan.
+- `.claude/skills/individual-history/` — answers questions about what that
+  database holds, for one Scout or across the troop: what a rank still needs,
+  Eagle-required slot coverage, position-of-responsibility tenure, idle
+  partials.  It reads; it does not plan.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -131,7 +135,9 @@ before anything else, so no `bundle exec` prefix is needed.
 ### Skill scripts
 
 Each skill has one script under `.claude/skills/<skill>/scripts/` — except
-`scout-req`, which has one per document it reads:
+`scout-req`, which has one per document it reads, and `individual-history`,
+whose script reads the database `import-individual-history` writes rather than a
+document of its own:
 
 - **`gta.rb`** (guide-to-advancement) — shells out to `pdftotext` to build a
   page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt on
@@ -224,6 +230,21 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   its freshness is **per Scout** — a record carries the date printed on the
   report that supplied it, so an import of an older report leaves a Scout alone
   rather than rewinding them.
+- **`history.rb`** (individual-history) — the only *reader* of
+  `individual-history.db`; it never writes and never opens a PDF.  Two of its
+  answers carry logic that is wrong if reinvented casually.  **Eagle coverage is
+  computed against `EAGLE_SLOTS`, never from the `eagle_required` column** — the
+  flag comes from the `*` TroopMaster prints, and the report does not always
+  print it (Citizenship in Society carries `#` on the current report, so it
+  stores as 0 for a badge that is squarely Eagle-required); three of the 14
+  slots are also OR-groups, so 14 slots are not 14 badges.  **POR tenure is a
+  union of intervals clipped to the Scout's own `rank_date`** — the book reads
+  "While a Star Scout, serve actively... for six months", so earlier service
+  counts toward the rank it was served under, and a Scout holding Bugler and
+  Patrol Leader over the same six months served six months rather than twelve.
+  `POR_MONTHS` and `EAGLE_SLOTS` are match keys and thresholds, not the book;
+  `EAGLE_SLOTS` deliberately duplicates the table in `mbc.rb` and the two must
+  stay in step.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -239,17 +260,20 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   since the sheet also carries the Advancement Chair's working tabs; those are
   skipped and named, while one of the four going *missing* stays fatal.
 
-**Every one of these rests on hard-won facts about its source document** — how
-the PDF extracts, what a given mark means, which cross-check catches a misparse.
-Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the ... the script depends on"** for the five
-TroopMaster skills, `scout-req` (which has one such section per document),
-`eagle-req`, and `badge-inventory`, and in **header and inline comments** in
-`gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`, `eagle.rb`, `inventory.rb`,
-`coh.rb`, and `individual_history.rb` each carry a second copy in their own
-header, next to the code the facts constrain.
+**Every one of these rests on hard-won facts about its source** — how the PDF
+extracts, what a given mark means, which column cannot be trusted, which
+cross-check catches a misparse.  Those facts live next to the code they
+constrain, not here: in **`SKILL.md` under "Facts about the ... the script
+depends on"** for the five TroopMaster skills, `scout-req` (which has one such
+section per document), `eagle-req`, `badge-inventory`, and `individual-history`
+(whose source is the database rather than a document), and in **header and
+inline comments** in `gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`,
+`eagle.rb`, `inventory.rb`, `coh.rb`, `individual_history.rb`, and `history.rb`
+each carry a second copy in their own header, next to the code the facts
+constrain.
 
-**Read them before changing a parser.** Each was established by getting it wrong
+**Read them before changing a parser** — or, for `history.rb`, before changing
+what an answer is computed from. Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
 done, not the alternative that was tried and silently produced garbage.
 
@@ -355,9 +379,8 @@ requirements from scouting.org.
 
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
-`RANK_LADDER` in `individual_history.rb` — are
-**match keys, not a second copy
-of the book.** They exist so a parser can identify a column or find the Scouts on
+`RANK_LADDER` in `individual_history.rb`, and `EAGLE_SLOTS` and `POR_MONTHS` in
+`history.rb` — are **match keys, not a second copy of the book.** They exist so a parser can identify a column or find the Scouts on
 a clock. Their labels are far too short to plan from and are not maintained
 against the book; the text that governs comes from `scout-req`. Do not quote one
 into a plan, and do not delete them either — the parsers do not work without

@@ -108,7 +108,6 @@ require "bundler/setup"
 
 require "date"
 require "fileutils"
-require "json"
 require "open3"
 require "rbconfig"
 require "time"
@@ -1008,54 +1007,6 @@ module DB
                       post[:current] ? 1 : 0, post[:credited] ? 1 : 0])
     end
   end
-
-  # Everything stored for one Scout, shaped the way a plan wants to read it.
-  def record(key)
-    scout = query("SELECT * FROM scouts WHERE key = ?", [key]).first or return nil
-
-    scout.merge(
-      "completed_ranks" => query(
-        "SELECT rank, earned_on FROM completed_ranks WHERE key = ? ORDER BY rank_order", [key]
-      ),
-      "requirements" => query("SELECT * FROM requirements WHERE key = ? ORDER BY seq", [key]),
-      "merit_badges" => query("SELECT * FROM merit_badges WHERE key = ? ORDER BY name", [key]),
-      "partials" => query("SELECT * FROM partials WHERE key = ? ORDER BY name", [key]),
-      "special_awards" => query("SELECT * FROM special_awards WHERE key = ? ORDER BY earned_on",
-                                [key]),
-      "leadership" => query("SELECT * FROM leadership WHERE key = ? ORDER BY start_date DESC",
-                            [key])
-    )
-  end
-
-  # Match on "Last, First", "First Last", a last name, or a first name — an
-  # ambiguous match is an error rather than a guess, because a plan filed under
-  # the wrong Scout is worse than no plan.
-  def resolve(name)
-    die "no report has been imported yet — run `import` first" unless ready?
-
-    rows = query("SELECT key, name, last_name, first_name FROM scouts ORDER BY name")
-    want = normalize(name)
-    exact = rows.select do |r|
-      [normalize(r["name"]), normalize("#{r['first_name']} #{r['last_name']}")].include?(want)
-    end
-    hits = if exact.empty?
-             rows.select do |r|
-               normalize(r["last_name"]) == want || normalize(r["first_name"]) == want
-             end
-           else
-             exact
-           end
-    hits = rows.select { |r| normalize(r["name"]).include?(want) } if hits.empty?
-
-    die "no Scout matching #{name.inspect}; `list` shows who has been imported" if hits.empty?
-    if hits.size > 1
-      die "#{name.inspect} matches #{hits.map do |r|
-        r['name']
-      end.join(', ')} — be more specific"
-    end
-
-    hits.first["key"]
-  end
 end
 
 # --------------------------------------------------------------------------
@@ -1098,93 +1049,6 @@ module Render
     rows.each do |row|
       puts format("  %-26s %s (%s)", row["name"], day(row["report_date"]), age_of(row))
     end
-  end
-
-  def show(key)
-    rec = DB.record(key) or die "no Scout stored under #{key}"
-
-    header(rec)
-    ranks(rec)
-    badges(rec)
-    puts
-    other(rec)
-  end
-
-  def header(rec)
-    puts "#{rec['name']}   —   Troop #{rec['troop']}"
-    puts format("  Rank %s (%s)   Patrol %s", rec["rank"], day(rec["rank_date"]), rec["patrol"])
-    puts format("  Age %s   Joined %s   Position %s", rec["age"] || "—", day(rec["joined"]),
-                rec["position"].to_s.empty? ? "—" : rec["position"])
-    puts format("  Camping %s nights   Hiking %s miles   Service %s hours",
-                rec["nights_camping"], rec["miles_hiking"], rec["service_hours"])
-    puts format("  From %s, report dated %s (%s), imported %s", rec["source_file"],
-                day(rec["report_date"]), age_of(rec), rec["imported_at"][0, 10])
-    puts
-  end
-
-  def ranks(rec)
-    puts "Completed ranks"
-    rec["completed_ranks"].each do |rank|
-      puts format("  %-14s %s", rank["rank"], day(rank["earned_on"]))
-    end
-    rec["requirements"].group_by { |req| req["rank"] }.each { |rank, reqs| block(rank, reqs) }
-  end
-
-  def block(rank, reqs)
-    puts "\n#{rank} — #{reqs.count { |req| req['signed'] == 1 }} of #{reqs.size} signed off"
-    open = reqs.reject { |req| req["signed"] == 1 }
-    slots, rest = open.partition { |req| req["kind"] == "badge_slot" && req["badge"].to_s.empty? }
-    rest.each do |req|
-      puts format("  [ ] %-6s %s%s", req["req_id"] || "", req["label"],
-                  req["note"] ? " #{req['note']}" : "")
-    end
-    return if slots.empty?
-
-    puts format("  [ ] %-6s %d more merit badge%s", "", slots.size, slots.size == 1 ? "" : "s")
-  end
-
-  def badges(rec)
-    puts "\nMerit badges (#{rec['merit_badges'].size})"
-    rec["merit_badges"].each do |badge|
-      eagle = badge["eagle_required"] == 1 ? "  (Eagle-required)" : ""
-      puts format("  %-32s %s%s", badge["name"], day(badge["earned_on"]), eagle)
-    end
-    return if rec["partials"].empty?
-
-    puts "\nPartial merit badges (#{rec['partials'].size})"
-    rec["partials"].each { |part| partial(part) }
-  end
-
-  def partial(part)
-    counselor = part["counselor"] ? "counselor #{part['counselor']}" : "no counselor recorded"
-    puts format("  %-32s %3d%%  %s", "#{part['name']} (#{part['req_year']})",
-                part["percent"], counselor)
-    puts "        open: #{part['open_reqts']}"
-  end
-
-  def other(rec)
-    unless rec["special_awards"].empty?
-      puts "Special awards"
-      rec["special_awards"].each do |award|
-        puts format("  %-32s %s", award["name"], day(award["earned_on"]))
-      end
-      puts
-    end
-    puts "Leadership"
-    return puts "  (none recorded)" if rec["leadership"].empty?
-
-    rec["leadership"].each { |post| position(post) }
-  end
-
-  def position(post)
-    finish = post["current"] == 1 ? "present" : day(post["end_date"])
-    credit = post["credited"] == 1 ? "" : "  (not credited toward rank)"
-    puts format("  %-26s %s – %s%s", post["position"], day(post["start_date"]), finish, credit)
-  end
-
-  def json(keys)
-    records = keys.map { |key| DB.record(key) }
-    puts JSON.pretty_generate(records.size == 1 ? records.first : records)
   end
 end
 
@@ -1280,10 +1144,13 @@ USAGE = <<~TEXT.freeze
     import [REPORT.pdf]        verify, then store; --force to overwrite newer data
     list                       who has been imported, and how old each one's data is
     stale  [--days N]          whose data is too old to plan from (default #{STALE_DAYS})
-    show   "Last, First"       everything stored for one Scout
-    json   ["Last, First"]     the same, machine-readable; all Scouts if no name
     badges [REPORT.pdf]        badge names, one per line, for req.rb check
     notes  [REPORT.pdf]        only the things worth knowing before planning
+
+  This skill loads; it does not answer questions. To read what was stored --
+  one Scout's record, what a rank still needs, Eagle-required coverage,
+  position-of-responsibility tenure -- use the `individual-history` skill:
+      ruby ../individual-history/scripts/history.rb show "Last, First"
 
   With no REPORT.pdf the newest IndividualHistory*.pdf in reports/ is used.
 
@@ -1313,15 +1180,8 @@ when "badges" then Command.badges(Command.report_path(target))
 when "notes"  then Command.notes(Command.report_path(target))
 when "list"   then DB.ready? ? Render.list : die("nothing imported yet — run `import` first")
 when "stale"  then DB.ready? ? Render.stale(days) : die("nothing imported yet — run `import` first")
-when "show"   then Render.show(DB.resolve(target || die(USAGE)))
-when "json"
-  keys = if target
-           [DB.resolve(target)]
-         else
-           DB.query("SELECT key FROM scouts ORDER BY name").map do |r|
-             r["key"]
-           end
-         end
-  Render.json(keys)
+when "show", "json"
+  die "`#{command}` moved to the individual-history skill:\n  " \
+      "ruby ../individual-history/scripts/history.rb #{command} #{target || '"Last, First"'}"
 else abort USAGE
 end

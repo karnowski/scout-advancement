@@ -9,10 +9,11 @@ Turn a TroopMaster **Individual History** report into rows in a local SQLite
 database, one record per Scout, each stamped with the date of the report it came
 from.
 
-This skill is the *loading dock*, not the planner.  It answers "what does the
-troop's record say about this Scout" and nothing else: it never decides what a
-Scout should work on next, never quotes a requirement, and never writes a plan.
-`generate-advancement-plan` does that, reading what this skill stored.
+This skill is the *loading dock*.  It parses, verifies, and stores — and stops
+there.  It never decides what a Scout should work on next, never quotes a
+requirement, and never writes a plan.  Answering questions about what it stored
+is `individual-history`; planning from those answers is
+`generate-advancement-plan`.
 
 The Individual History report is the most complete per-Scout export TroopMaster
 produces.  For every Scout it prints the ranks already earned, **every
@@ -33,8 +34,6 @@ if `pdftotext` is missing run `brew install poppler`.
 ruby scripts/individual_history.rb verify [REPORT.pdf]     # cross-check the parse — run this first
 ruby scripts/individual_history.rb import [REPORT.pdf]     # verify, then store
 ruby scripts/individual_history.rb list                    # who is stored, and how old each one's data is
-ruby scripts/individual_history.rb show "Last, First"      # everything stored for one Scout
-ruby scripts/individual_history.rb json ["Last, First"]    # the same, machine-readable
 ruby scripts/individual_history.rb stale [--days N]        # whose data is too old to plan from
 ruby scripts/individual_history.rb badges [REPORT.pdf]     # badge names, one per line, for req.rb check
 ruby scripts/individual_history.rb notes  [REPORT.pdf]     # only what is worth knowing before planning
@@ -43,10 +42,15 @@ ruby scripts/individual_history.rb notes  [REPORT.pdf]     # only what is worth 
 With no `REPORT.pdf` the newest `IndividualHistory*.pdf` in `reports/` is used,
 which is normally what you want — drop the export there and run `import`.
 
-`show` and `json` take a name in any reasonable shape: `"Rivera, Sam"`,
-`"Sam Rivera"`, `Rivera`, or `Sam`.  A name that matches two Scouts is
-an error naming both, never a guess — a plan filed under the wrong Scout is
-worse than no plan.
+`list` and `stale` are about the *import* — who is stored and how old each
+one's data is.  **Reading what was stored is the `individual-history` skill**,
+not this one: one Scout's record, what a rank still needs, Eagle-required
+coverage, position-of-responsibility tenure, and the troop-wide roll-ups.
+
+    ruby ../individual-history/scripts/history.rb show "Rivera, Sam"
+    ruby ../individual-history/scripts/history.rb roster
+
+`show` and `json` used to live here; running either now prints where they went.
 
 ## Import it, don't read the PDF
 
@@ -96,7 +100,10 @@ better than nothing, and rewinds nobody.
 built on a months-old report will confidently list work the Scout has already
 finished, so check `stale` before a planning run and re-export if it complains.
 
-## Reading the answer
+## What the stored data means
+
+These are facts about the rows, and they hold wherever the rows are read —
+`individual-history` repeats the ones its answers turn on.
 
 - **`__/__/__` is not missing data.**  It is the report saying a requirement is
   printed and not signed off.  The database keeps that distinct from a
@@ -107,8 +114,9 @@ finished, so check `stale` before a planning run and re-export if it complains.
   prints requirement blocks only for ranks the Scout has *not* earned; earned
   ranks appear as one line each under Completed Ranks.
 - **`_______________ MB` is an unfilled merit badge slot**, not a requirement
-  with a strange name.  `show` counts these as "N more merit badges"; in the
-  data they are `kind = 'badge_slot'` with a NULL `badge`.
+  with a strange name.  In the data they are
+  `kind = 'badge_slot'` with a NULL `badge`, and they are reported as "N more
+  merit badges".
 - **`*` after a badge name means Eagle-required.**  It is stored as
   `eagle_required` and stripped from the name.
 - **`#` is not interpreted.**  The page legend defines `#` only for leadership
@@ -120,8 +128,8 @@ finished, so check `stale` before a planning run and re-export if it complains.
   edition of the requirements the Scout started under.  Say which year when
   discussing a partial; it is often not the current one.
 - **`Participation` and `Scoutmaster Conference` in a Palm block are annotated
-  `(discontinued 2024)`.**  The annotation is stored in `note` and shown by
-  `show`.  Report it rather than treating those as work to be done.
+  `(discontinued 2024)`.**  The annotation is stored in `note`.
+  Report it rather than treating those as work to be done.
 
 ## Requirement text comes from elsewhere
 
