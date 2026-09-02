@@ -61,6 +61,10 @@ plans and in answers to the Advancement Chair; they just never reach git.
   the troop's badge inventory Google Sheet.
 - `.claude/skills/coh-shopping-list/` — turns a TroopMaster "Court Of Honor"
   report into a Scout Shop order, subtracting what the troop already holds.
+- `.claude/skills/import-individual-history/` — reads a TroopMaster "Individual
+  History" report into a local SQLite database, one record per Scout, each
+  stamped with the date of the report it came from.  It stores; it does not
+  plan.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -209,6 +213,17 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
   `RANK_ORDER` (the report's two-column summary reads out in page order, not
   advancement order), everything else grouped merit badge patches, then cards,
   then awards, and alphabetical within each.
+- **`individual_history.rb`** (import-individual-history) — rebuilds the
+  Individual History report's tables from `pdftotext -bbox-layout` and stores
+  them in `.cache/individual-history.db`. The report is drawn column by column,
+  so every cell is its own `<line>` and a row is the set of lines sharing a
+  `yMin` — read top to bottom the columns interleave. `-layout` cannot be used
+  at all: in the merit badge list a long name runs into its own date with a
+  single space between them, the same as the space inside the name. Its
+  `badges` subcommand prints every badge name for `req.rb check` to read, and
+  its freshness is **per Scout** — a record carries the date printed on the
+  report that supplied it, so an import of an older report leaves a Scout alone
+  rather than rewinding them.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -227,12 +242,12 @@ Each skill has one script under `.claude/skills/<skill>/scripts/` — except
 **Every one of these rests on hard-won facts about its source document** — how
 the PDF extracts, what a given mark means, which cross-check catches a misparse.
 Those facts live next to the code they constrain, not here: in **`SKILL.md`
-under "Facts about the ... the script depends on"** for the four
+under "Facts about the ... the script depends on"** for the five
 TroopMaster skills, `scout-req` (which has one such section per document),
 `eagle-req`, and `badge-inventory`, and in **header and inline comments** in
 `gta.rb` and `calendar.rb`.  `req.rb`, `changes.rb`, `eagle.rb`, `inventory.rb`,
-and `coh.rb` each carry a second copy in their own header, next to the code
-the facts constrain.
+`coh.rb`, and `individual_history.rb` each carry a second copy in their own
+header, next to the code the facts constrain.
 
 **Read them before changing a parser.** Each was established by getting it wrong
 first, and none is recoverable by reading the code alone — the code shows what is
@@ -254,6 +269,14 @@ Two rules generalize across all of them:
   own tally, so it uses it three ways at once: each Awards Summary section's
   declared total, the sum of that section's line items, and an independent
   re-tally of the per-Scout detail pages must all agree, item by item.
+  `individual_history.rb` has the same kind of tally — each Scout's badge list
+  is headed `Merit Badges : N` — and uses it twice over: N against the rows
+  parsed, and every badge named in a Star/Life/Eagle slot against that list
+  *with the same date*, since the two are printed from the same data by
+  different code paths. It also insists every cell on every page is claimed by
+  some section, that completed ranks are a prefix of the ladder and agree with
+  the header, and that a rank never has both a completion date and a printed
+  requirement block — the report prints blocks only for ranks not yet earned.
   `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
   identical everywhere, every phone-code line accounted for. `eagle.rb` has no
@@ -271,9 +294,10 @@ Two rules generalize across all of them:
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
-  plain `pdftotext` for the requirements book, and `-bbox-layout` for the 2026
-  change table, whose columns only coordinates can separate.  Each is justified
-  where it is used.  Do not swap one without re-measuring against the actual PDF.  The Eagle
+  plain `pdftotext` for the requirements book, and `-bbox-layout` for both the
+  2026 change table and the Individual History report, whose columns only
+  coordinates can separate.  Each is justified where it is used.  Do not swap
+  one without re-measuring against the actual PDF.  The Eagle
   project workbook is the exception that proves it: **poppler cannot read that
   file correctly at all**, which is why `eagle.rb` uses `pdf-reader` and decodes
   the fonts itself.
@@ -315,6 +339,12 @@ TroopMaster report is exactly where a post-2025 badge enters unannounced.
 sheet very likely has no row for** — a patch the troop may never have stocked,
 which would otherwise read as "not tracked" and be mistaken for a zero.
 
+`individual_history.rb` pipes `badges` through `req.rb check` for the same
+reason `target-eagle` does, and more urgently: a TroopMaster report is where a
+post-2025 badge enters unannounced, and 12 of the 39 badges on the troop's
+current Individual History report changed effective Jan. 1, 2026, so the 2025
+text is out of date for nearly a third of them.
+
 `mbc.rb` and `inventory.rb` are the other consumers, and both use `req.rb list
 --kind badge` rather than `check` — they need the *whole* badge list, because
 "we have no counselor for that badge" / "we hold no patches for that badge" and
@@ -324,7 +354,8 @@ prints a note on a badge the 2025 printing does not carry and says to get the
 requirements from scouting.org.
 
 The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
-`BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb` — are
+`BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
+`RANK_LADDER` in `individual_history.rb` — are
 **match keys, not a second copy
 of the book.** They exist so a parser can identify a column or find the Scouts on
 a clock. Their labels are far too short to plan from and are not maintained

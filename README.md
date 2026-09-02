@@ -33,6 +33,7 @@ The "[date]" in the filter name is the date of when the filter was last updated.
 Then you run the following reports in TroopMaster and save them to the `reports/` directory:
 - **Target First Class** - Use the "Filter - Target First Class [date]" to choose the correct scouts.  Save the report as `reports/target-first-class-[date].pdf`.
 - **Target Eagle** - Use the "Filter - Target Eagle [date]" to choose the correct scouts.  Save the report as `reports/target-eagle-[date].pdf`.
+- **Individual History** - The full per-Scout advancement record.  Save the report as `reports/IndividualHistoryReport-[date].pdf`.  It needs no custom filter; run it for whichever Scouts you are planning for, and the `import-individual-history` skill will merge each Scout into the database without disturbing anyone whose stored data is newer.
 
 
 ## Skills
@@ -231,6 +232,32 @@ box.
 
 Orders are written to `plans/coh-shopping-list-YYYY-MM-DD.md`, dated from the
 report they read.
+
+### `import-individual-history`
+
+Reads a TroopMaster **Individual History** report — the most complete per-Scout
+export TroopMaster produces — into a local SQLite database, one record per
+Scout.  For each Scout it stores the ranks already earned, every requirement of
+every rank *not* yet earned with its sign-off date, the merit badges earned, the
+partials with their open requirements and counselor, camping/hiking/service
+totals, special awards, and the full leadership history with dates.
+
+It is the loading dock, not the planner: it never says what a Scout should work
+on next and never quotes a requirement.  `generate-advancement-plan` does that,
+reading what this stored.
+
+Two things about it are worth knowing.  The report is a **table that only
+coordinates can parse** — in the merit badge list a long name runs into its own
+date with a single space between them, so `pdftotext -layout` merges the two and
+the badge loses its date; the script uses `-bbox-layout` and rebuilds rows from
+x/y positions.  And **freshness is tracked per Scout, not per file**: every
+record carries the date printed on the report it came from, so importing an
+older report fills in the Scouts it knows about and rewinds nobody.  `stale`
+flags anyone whose data is too old to plan from.
+
+Because a misparse of a grid this dense looks like a Scout who is behind rather
+than like an error, `import` runs `verify` first and refuses to store anything
+that fails it.
 
 ### `badge-inventory`
 
