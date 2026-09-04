@@ -65,6 +65,16 @@ plans and in answers to the Advancement Chair; they just never reach git.
   History" report into a local SQLite database, one record per Scout, each
   stamped with the date of the report it came from.  It stores; it does not
   plan.
+- `.claude/skills/import-activities-history/` — the other importer, and the only
+  one whose rows are *dated quantities* rather than sign-offs: a TroopMaster
+  "Individual Participation" report, one row per activity, each carrying the
+  service hours, conservation hours, camping nights, or hiking miles it was
+  worth.  It is what makes "this Scout owes three more service hours, one of
+  them conservation" sayable at all — the Individual History report knows only
+  that the requirement is unsigned.  It stores and it sums; it decides nothing,
+  because the rank date the hours must follow lives in `individual-history` and
+  the six-hour threshold lives in the book.  Its cache keys on the same BSA ID,
+  so the two join.
 - `.claude/skills/individual-history/` — answers questions about what that
   database holds, for one Scout or across the troop: what a rank still needs,
   Eagle-required slot coverage, position-of-responsibility tenure, idle
@@ -135,11 +145,13 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Six of the thirteen skills also need **`pdftotext`**, and `scout-req` additionally
+Seven of the fourteen skills also need **`pdftotext`**, and `scout-req` additionally
 needs **`pdftohtml`** — the latter for `req.rb`; the sibling `changes.rb` needs
-only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.  Both
-come from poppler, and neither is a gem, so `bundle install` alone leaves a
-fresh clone unable to run them:
+only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.
+`activities.rb` uses the same gem for a third reason again — the Individual
+Participation report prints no date of its own, so its report date comes from
+the PDF's `CreationDate`.  Both tools come from poppler, and neither is a gem,
+so `bundle install` alone leaves a fresh clone unable to run them:
 
     brew install poppler
 
@@ -303,6 +315,29 @@ one Scout at a time:
   beside its own — they now agree for every Scout, so that line is a **guard**:
   a mismatch means one of the two lists has moved.  Do not "restore" the 14th
   slot to match the book without raising it with the Advancement Chair.
+- **`activities.rb`** (import-activities-history) — rebuilds the Individual
+  Participation report's activity table from `pdftotext -bbox-layout` and stores
+  it in `.cache/activities-history.db`.  Four things about it are wrong if
+  reinvented.  **The Type column is separated from the Event Title by nothing
+  but the words' own x** — a title runs into its type with a single space
+  (`Soil & Water Conservation MB MB Program`), so `-layout` cannot tell the two
+  apart and gets 12 of the current report's 1086 rows wrong, each one a
+  plausible activity filed under the wrong heading; words are bucketed against
+  column origins read off the table's own header row.  **The page header is a
+  date range and starts with a date**, so a row filter keyed on "starts with a
+  date" swallows the legend on all 91 pages; activity rows must also sit below
+  the table header.  **The `# / Percent` block is not positionally readable** —
+  a zero denominator prints `0 /` with nothing after it — so it is skipped
+  deliberately and `verify` re-derives it from `count / offered` as a guard on
+  that pairing instead.  And **the report's date range is a filter, not a
+  Scout's history**: hours before it are simply absent, which reads as a Scout
+  who owes more service than they do, so the window is stored and `hours
+  --since` **refuses** a date before it rather than answering short.  The
+  amount's unit is per type and the report declares it (`Camping # / Nights`,
+  `Serv Proj # / Hours`, `Hiking # / Miles`), the `+`/`#` markers are pitch-tent
+  and cabin nights and matter to Camping req. 9a, and the `of N` denominator is
+  **opportunities offered to that Scout since they joined**, not a troop-wide
+  event count.  It sums; it applies no threshold.
 - **`plan.rb`** (generate-advancement-plan) — the dated arithmetic behind one
   Scout's plan.  It opens neither a PDF nor the database: **the record comes
   from `history.rb json`**, so the plan and the report cannot describe different
@@ -365,15 +400,15 @@ one Scout at a time:
 extracts, what a given mark means, which column cannot be trusted, which
 cross-check catches a misparse.  Those facts live next to the code they
 constrain, not here: in **`SKILL.md` under "Facts about the ... the script
-depends on"** for the five TroopMaster skills, `scout-req` (which has one such
+depends on"** for the six TroopMaster skills, `scout-req` (which has one such
 section per document), `eagle-req`, `badge-inventory`, `individual-history`
 (whose source is the database rather than a document),
 `generate-advancement-plan` (whose source is `individual-history`), and
 `troop-advancement-plan` (whose source is `generate-advancement-plan`), and in
 **header and inline comments** in `gta.rb` and `calendar.rb`.  `req.rb`,
 `changes.rb`, `eagle.rb`, `inventory.rb`, `coh.rb`, `individual_history.rb`,
-`history.rb`, `plan.rb`, and `troop.rb` each carry a second copy in their own
-header, next to the code the facts constrain.
+`activities.rb`, `history.rb`, `plan.rb`, and `troop.rb` each carry a second
+copy in their own header, next to the code the facts constrain.
 
 **Read them before changing a parser** — or, for `history.rb`, `plan.rb`, and
 `troop.rb`, before changing what an answer is computed from. Each was
@@ -409,6 +444,18 @@ Two rules generalize across all of them:
   The tally is the one check the report can withhold: a Scout who has just
   joined gets **no Merit Badges section at all**, not a heading reading zero, so
   a missing tally is a note unless badges were parsed anyway.
+  `activities.rb` has the richest tally of any of them, and needs it, because a
+  misassigned activity row is an entirely ordinary-looking one: each Scout's
+  rows are followed by a `# / Amount` block declaring a count *and* a summed
+  amount for all 28 activity types, and then a `# / Total` block — 2128 declared
+  figures against 1086 rows on the current report, every one re-derived and
+  compared.  On top of that it insists every scrap of text on every page is
+  claimed, that each Scout's summary covers every type the report declared for
+  them (the only guard against a section migrating between Scouts, since
+  continuation pages carry no name), that every activity date falls inside the
+  report's own window, and that nobody attended more events of a type than were
+  offered to them.  A new activity level, an unlisted marker, a negative amount,
+  and a filename that disagrees with the PDF's generation date are notes.
   `mbc.rb` has no tally either, so it leans on what a *grouped* report
   guarantees — every badge staffed, names alphabetical, each counselor's phone
   identical everywhere, every phone-code line accounted for. `eagle.rb` has no
@@ -445,9 +492,10 @@ Two rules generalize across all of them:
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
-  plain `pdftotext` for the requirements book, and `-bbox-layout` for both the
-  2026 change table and the Individual History report, whose columns only
-  coordinates can separate.  Each is justified where it is used.  Do not swap
+  plain `pdftotext` for the requirements book, and `-bbox-layout` for the 2026
+  change table, the Individual History report, and the Individual Participation
+  report, whose columns only coordinates can separate.  Each is justified where
+  it is used.  Do not swap
   one without re-measuring against the actual PDF.  The Eagle
   project workbook is the exception that proves it: **poppler cannot read that
   file correctly at all**, which is why `eagle.rb` uses `pdf-reader` and decodes

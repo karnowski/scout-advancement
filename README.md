@@ -34,6 +34,7 @@ Then you run the following reports in TroopMaster and save them to the `reports/
 - **Target First Class** - Use the "Filter - Target First Class [date]" to choose the correct scouts.  Save the report as `reports/target-first-class-[date].pdf`.
 - **Target Eagle** - Use the "Filter - Target Eagle [date]" to choose the correct scouts.  Save the report as `reports/target-eagle-[date].pdf`.
 - **Individual History** - The full per-Scout advancement record.  Save the report as `reports/IndividualHistoryReport-[date].pdf`.  It needs no custom filter; run it for whichever Scouts you are planning for, and the `import-individual-history` skill will merge each Scout into the database without disturbing anyone whose stored data is newer.
+- **Individual Participation** - Under *Activities*.  The dated activity log behind the service hours, conservation hours, camping nights, and hiking miles.  Save it as `reports/Activities-IndividualParticipation-[date].pdf`.  No custom filter, but **set the date range wide** — wider than the oldest rank date in the troop.  The range is a filter, and anything before it is missing rather than zero, so a narrow range makes Scouts look as though they owe service they have already done.
 
 
 ## Skills
@@ -259,6 +260,37 @@ flags anyone whose data is too old to plan from.
 Because a misparse of a grid this dense looks like a Scout who is behind rather
 than like an error, `import` runs `verify` first and refuses to store anything
 that fails it.
+
+### `import-activities-history`
+
+Reads a TroopMaster **Individual Participation** report into a second local
+database — one row per activity, each dated, typed, and carrying the hours,
+nights, or miles it was worth.
+
+It exists because of a gap the Individual History report cannot close.  That
+report says the Service Project requirement is unsigned.  It does not say the
+Scout has done three of the six hours, or that the three still owed have to be
+conservation-related.  This one carries every service project, conservation
+project, campout, and hike with its date and its amount, so the shortfall is
+computable against the day the Scout earned their rank.  It also carries camping
+**nights** — which turns Camping merit badge requirement 9a from an
+undated opportunity into a countable one — and an attendance rate per activity
+type.
+
+Like its sibling it stores and verifies, and it goes one step further by
+summing: `hours NAME --type "Serv Proj,Conservation" --since 2025-08-16` totals
+the rows between two dates.  It stops there.  It does not know that Star asks
+for six hours or that Life asks for three of them to be conservation, and it
+does not know the rank date — those belong to `scout-req`,
+`generate-advancement-plan`, and `individual-history` respectively.
+
+Two things about it are worth knowing.  The report **declares its own totals**,
+a count and a summed amount for all 28 activity types per Scout, and `verify`
+re-derives every one of them from the rows it parsed — on the troop's current
+report, 2128 figures against 1086 rows.  And the report's **date range is a
+filter, not a Scout's history**: hours before it are absent rather than zero, so
+the window is stored and `hours --since` refuses a date earlier than it rather
+than quietly answering short.
 
 ### `individual-history`
 
