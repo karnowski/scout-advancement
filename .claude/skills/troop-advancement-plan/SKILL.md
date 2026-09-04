@@ -185,6 +185,63 @@ ruby ../scout-req/scripts/req.rb show tenderfoot
 ruby ../scout-req/scripts/req.rb show "first class"
 ```
 
+### The calendar gap sweep — run it every time
+
+`themes` says what a campout, an outing, or a service project would be *worth*.
+Only the calendar says whether one exists. A theme with a hundred sign-offs
+behind it and no event on the feed is the single most useful thing this skill
+produces, and **it is invisible unless you go looking** — no script will find
+it, because deciding whether an event supports a requirement is a reading, not
+a lookup. Canoe camping serves First Class 6b/6c/6d and does *not* serve 6a.
+
+So search the troop's feed for each of these, and note which return **nothing**:
+
+| Search the feed for | What it would run |
+| :------------------ | :---------------- |
+| `camp`, `campout`, `camporee`, `summer camp` | the `campcraft` and `cooking` themes, and Camping 9's nights |
+| `swim`, `pool`, `aquatic`, `waterfront` | the `aquatics` theme, which is a pool or a waterfront date and nothing else |
+| `orient`, `compass`, `hike`, `trail` | the `navigation` theme |
+| `park`, `nature`, `garden`, `trail` | the `nature` theme |
+| `service`, `cleanup`, `conservation`, `flag` | the `service` theme, and Citizenship in the Community 7's volunteer hours |
+| `merit badge`, `college`, `midway` | the shared badge sessions `badges` names |
+| `shed` | every concentrated sign-off session — **count them; there may be one** |
+| `court of honor` | the `--by` date every clock in the run is measured against |
+
+Four things about running it:
+
+- **Search a year out, not just the planning window.** "The next one is in
+  January" is the finding, and it is a different finding from "there is none".
+- **Cross-check each count against the Scouts.** `themes` and `clocks` both name
+  who needs the session; a booking that serves twenty Scouts and a booking that
+  serves two are not the same request to the committee.
+- **A gap is a booking, not a to-do.** It belongs in "Activities to book" and in
+  the Advancement Chair's list, never in a Scout's — the Scout cannot fix it.
+- **The search terms match the troop's own event names, not requirements.** They
+  find candidate events; whether an event actually closes a requirement is a
+  reading. Get the text from `scout-req` and check it against what the event
+  description says the troop will be doing.
+
+**The `[opportunity]` clocks are what this sweep exists for.** They are the rows
+`clocks` deliberately prints with no date, because they are not spans of
+calendar at all, and this is where they turn into something schedulable:
+
+- **Camping 9's nights** need campouts, and the count matters — read how many
+  nights the cohort is short against how many nights the calendar offers before
+  the target date. Short by six with two weekends left is a plan that does not
+  close, and saying so is worth more than another line of to-dos.
+- **Citizenship in the Community 7's volunteer hours** need a specific
+  organization, not the troop's own service project. Check `mbc` for a counselor
+  in the same pass.
+- **Personal Fitness 1's exams are not a troop booking at all.** They are a
+  doctor's and a dentist's appointment, so the action is a letter home with
+  enough lead time, and it goes in the Advancement Chair's list rather than on
+  the calendar. Everything else in that badge is gated behind them.
+
+One thing that is **not** a gap: conferences and boards of review. Whether they
+appear on the feed at all is a troop convention — read "How the troop runs
+advancement" in `TROOP-SETTINGS.md` before reporting their absence, because in
+Troop 400 they are not on the calendar and never were.
+
 ### Clocks, rolled up
 
 `clocks` prints one row per clock rather than one per Scout, because that is
@@ -326,13 +383,11 @@ board stays a separate line.
 
 - **troop-calendar** — the real dates, and the single most important pairing
   here. `themes` says what a campout, an outing, or a service project would be
-  worth; the calendar says whether one exists. Take each `:campout`, `:outing`,
-  and `:service` theme to the feed and find the event that closes it, then
-  **flag the themes with no event on the calendar at all** — an aquatics block
-  worth a hundred sign-offs with no pool date is a booking to make, and that is
-  worth more to the reader than another to-do line. Count the meeting nights in
-  the window for `load`, and count the Saturdays at the Shed — there may be one.
-  Search a year out; "the next one is in January" is the finding.
+  worth; the calendar says whether one exists. **Run "The calendar gap sweep"
+  above every time** — it is the search-term list, the `[opportunity]` clocks
+  that have to become bookings, and the rule that a gap belongs to the
+  Advancement Chair rather than to a Scout. Also count the meeting nights in the
+  window for `load`, and count the Saturdays at the Shed — there may be one.
 - **generate-advancement-plan** — one Scout's plan, for anyone `attention`
   surfaces or `cohorts` puts at the front. It is also where every per-Scout
   number here comes from, so a claim in this plan should be checkable against
@@ -373,7 +428,8 @@ Suggested shape:
 3. **The next few meetings** — a theme per night, with the Scouts it advances
    and the conference and board load for that night, no night over the cap.
 4. **Activities to book** — the campout, outing, and service themes, matched to
-   real calendar events, with the gaps called out as bookings to make.
+   real calendar events, with the gaps from the sweep called out as bookings to
+   make, each with the number of Scouts it would serve.
 5. **What must start this month** — the `[work]` clocks with near start-by
    dates, as group announcements rather than per-Scout to-dos.
 6. **Merit badges** — the shared Eagle slots and the near-complete partials

@@ -357,6 +357,15 @@ across a dozen Scouts is a troop finding, not a Scout one**: a group started it
 together and stopped, and someone has to decide whether to finish it or write it
 off.
 
+It also carries a **calendar gap sweep**: a list of terms to search the troop's
+feed for, and the themes and clocks each one would serve.  `themes` says what a
+campout, an outing, or a service project would be worth, but only the calendar
+says whether one exists, and a session worth a hundred sign-offs with no date on
+the feed is invisible unless someone goes looking.  That sweep is also where the
+three requirements with no date at all — Camping's nights, Citizenship in the
+Community's volunteer hours, and Personal Fitness's exams — turn into a booking,
+a counselor to find, or a letter home.
+
 Every per-Scout number it prints is read back out of `generate-advancement-plan`
 rather than recomputed, so the troop plan and the individual plans cannot
 disagree.  `verify` checks that, checks that every requirement in the data is
