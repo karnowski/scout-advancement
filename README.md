@@ -386,3 +386,38 @@ Like `mbc`, it reconciles its merit badge tab against `scout-req` — the sheet
 runs ahead of the 2025 printing by three badges — and it reports inventory
 only.  What a badge requires still comes from `scout-req`, and who counsels it
 from `mbc`.
+
+## Agents
+
+Skills are what the session knows how to do; an agent is a worker the session
+can hand a job to, with its own context and its own copy of the work.  Agent
+definitions live in `.claude/agents/`.
+
+### `advancement-plan`
+
+Wraps `generate-advancement-plan` for **one named Scout, end to end, in its own
+context**.  Hand it a name; it resolves the Scout, checks them against the
+troop's "Scout Updates", runs the verification and badge checks, builds the
+analysis, enriches it from `scout-req`, `troop-calendar`, and `mbc`, writes
+`plans/advancement-plan-{lastname}-{firstname}-{report-date}.md`, and reports
+back the file path, the bottom line, and anything needing an adult.
+
+It exists because **one plan is a whole session's worth of work.**  A patrol is
+eight of those and the troop is thirty-eight, which does not fit in one context
+and is dull to drive one at a time.  Several can run at once, one Scout each, so
+a patrol's plans arrive together.
+
+That is parallel invocation, not a cohort analysis — each agent still plans for
+exactly one Scout, and what the *troop* does at its next few meetings remains
+`troop-advancement-plan`.  The division of labour is worth keeping straight: the
+agent is a way of running the individual skill many times, not a third kind of
+plan.
+
+Three of its rules come from running many copies at once.  It **touches only its
+own Scout's file**, because a sibling is writing the one next to it.  It **never
+syncs a cache or re-imports a report** — the launching session warms the
+calendar and imports the records once beforehand, since `troop-calendar`
+re-syncs itself whenever its cache is over six hours old and a dozen agents
+starting cold would race a dozen feed fetches onto one SQLite file.  And it
+**stops rather than works around a problem**: an ambiguous name, a Scout who has
+left the troop, or a failed `verify` is reported back, never guessed past.

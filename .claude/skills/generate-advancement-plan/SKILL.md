@@ -353,12 +353,52 @@ Three things to keep honest:
   guessing — an `[opportunity]` row with no event on the calendar, a missing date
   of birth, a partial under a requirement year that has since changed.
 
+## Running many at once
+
+One plan is a session's worth of work — the checks, the requirement wording,
+the calendar hooks, the counselors. A patrol is eight of those, and the troop is
+thirty-eight, which does not fit in one context.
+
+The **`advancement-plan` agent** (`.claude/agents/advancement-plan.md`) is this
+skill wrapped for that: hand it a Scout's name and it runs this skill end to end
+in its own context and writes the one file. Launch several in the same turn to
+cover a patrol.
+
+That does not make this a cohort skill. **Each agent is still one Scout, one
+plan** — the fan-out is parallel invocation, not a batch analysis. What the
+troop does at its next few meetings is still `troop-advancement-plan`.
+
+Before fanning out, the launching session does the shared work **once**, because
+the agents are told not to:
+
+```
+ruby .claude/skills/troop-calendar/scripts/calendar.rb sync
+ruby .claude/skills/individual-history/scripts/history.rb roster
+```
+
+The sync matters: `calendar.rb` re-syncs itself whenever its cache is over six
+hours old, so a dozen agents starting cold means a dozen feed fetches racing on
+one SQLite file. Warm it first and every agent just reads. Import the Individual
+History report first too, for the same reason — the agents read that database
+and are forbidden to write it.
+
+The roster is where the names come from, and it is worth reading rather than
+skimming: it still lists Scouts who have left the troop, since the report was
+run before they left. `TROOP-SETTINGS.md` "Scout Updates" is what says so, and
+each agent re-checks its own Scout against it and stops rather than writing a
+plan for someone who is gone.
+
+An agent's report is not shown to the user, so relay what comes back — the file
+path, the bottom line, and anything it flagged as needing an adult.
+
 ## What this skill is not
 
 - **It is not a troop-wide planner.** One Scout, one plan. Requirements several
   Scouts need at once, Saturday-at-the-Shed session plans, and whether the
   conference and board load fits the meeting nights available are cohort
-  questions this skill does not answer.
+  questions this skill does not answer; `troop-advancement-plan` does. Running
+  this skill for thirty-eight Scouts is not the same thing — see "Running many
+  at once" above.
 - **It does not report the record.** `individual-history` does, and a plan that
   disagrees with it is wrong.
 - **It does not quote requirements.** `scout-req` does. The tables in `plan.rb`

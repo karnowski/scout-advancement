@@ -83,6 +83,17 @@ plans and in answers to the Advancement Chair; they just never reach git.
   meeting-night capacity, and names the handful of Scouts who need an adult.  It
   plans for the troop, never for a Scout; every per-Scout number it prints is
   read back out of `generate-advancement-plan`.
+- `.claude/agents/advancement-plan.md` — the only agent in the repo, and the
+  only thing here that is not a skill.  It wraps `generate-advancement-plan` for
+  one named Scout end to end in its own context, so a patrol's worth of plans
+  can be produced by launching several at once.  **That is parallel invocation,
+  not a cohort analysis** — each copy still plans for exactly one Scout, and the
+  troop-level question stays with `troop-advancement-plan`.  Three of its rules
+  exist only because copies run concurrently: it touches only its own Scout's
+  file, it never syncs a cache or re-imports a report (the launching session does
+  that once, up front, because `calendar.rb` re-syncs itself whenever its cache
+  is over six hours old), and it stops and reports rather than guessing past an
+  ambiguous name, a Scout who has left the troop, or a failed `verify`.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
