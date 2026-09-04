@@ -176,6 +176,28 @@ A theme with a high `signs` and a low `at-rank` is still worth running — it is
 the troop banking work — but say so in the plan rather than promising ranks from
 it.
 
+**The service theme is the one whose size is knowable**, and it prints the
+hours as well as the sign-off count:
+
+```
+service        71 signs /   7 at-rank   31 Scouts,  7 at rank
+               A troop service project
+               29 hours still owed between 7 Scouts at Star or Life,
+               of which 7 must be conservation work (3 of them)
+```
+
+A sign-off count says how many Scouts a project serves; the hours say how many
+mornings it takes. The conservation figure is **not a subtotal** — Life asks for
+three of its six hours to be conservation-related, so those seven hours are part
+of the twenty-nine and not extra to them. A park cleanup closes both; a food
+drive closes only the first, which is why the split is worth booking around.
+
+The hours come back from `generate-advancement-plan`, which gets them from
+`import-activities-history` clipped to each Scout's own rank date. That report
+is optional: without it the line names the Scouts whose hours could not be
+counted and says why, and it does the same for any Scout whose rank predates the
+report's date range, because a count there would run short.
+
 **The theme titles are match keys, not a syllabus.** They say a requirement
 belongs to an evening; they say nothing about what the requirement asks for.
 Before a session goes on the calendar, get the actual text:
@@ -225,10 +247,13 @@ Four things about running it:
 `clocks` deliberately prints with no date, because they are not spans of
 calendar at all, and this is where they turn into something schedulable:
 
-- **Camping 9's nights** need campouts, and the count matters — read how many
-  nights the cohort is short against how many nights the calendar offers before
-  the target date. Short by six with two weekends left is a plan that does not
-  close, and saying so is worth more than another line of to-dos.
+- **Camping 9's nights** need campouts, and the count matters — so `clocks`
+  prints it: `18 nights short between 3 Scouts`, alongside how many already have
+  them. Read that against how many nights the calendar offers before the target
+  date. Short by six with two weekends left is a plan that does not close, and
+  saying so is worth more than another line of to-dos. The row still carries
+  **no date**, because nights are not a span of calendar; a size and a date are
+  different claims.
 - **Citizenship in the Community 7's volunteer hours** need a specific
   organization, not the troop's own service project. Check `mbc` for a counselor
   in the same pass.
@@ -491,9 +516,14 @@ invented.
 ## Facts the script depends on
 
 - **Every per-Scout number comes from `plan.rb json`, not from arithmetic of its
-  own.** Ladder, banked work, clocks, verdicts, target date, Eagle slots, and
-  partials are read back from `generate-advancement-plan`, one process per
-  Scout, four at a time. That costs a second or two and makes the troop plan and
+  own.** Ladder, banked work, clocks, verdicts, target date, Eagle slots,
+  partials, and the service hours are read back from
+  `generate-advancement-plan`, one process per Scout, four at a time. **This
+  script never opens the participation cache itself**, for the same reason it
+  never opens the database: the rank date the hours are clipped to, the
+  six-hour threshold, and Life's conservation condition all live one layer down,
+  and a troop plan that disagreed with an individual plan about a Scout's hours
+  would be worse than one that never mentioned them. That costs a second or two and makes the troop plan and
   the individual plans provably the same analysis. **The one exception** is
   which requirements are open at a given rank — this script needs the `req_id`
   to sort a requirement into a theme, and `plan.rb json` prints labels — and

@@ -108,10 +108,11 @@ require "json"
 require "open3"
 require "rbconfig"
 
-SKILLS         = File.join(REPO_ROOT, ".claude", "skills")
-HISTORY_SCRIPT = File.join(SKILLS, "individual-history", "scripts", "history.rb")
-REQ_SCRIPT     = File.join(SKILLS, "scout-req", "scripts", "req.rb")
-SETTINGS       = File.join(REPO_ROOT, "TROOP-SETTINGS.md")
+SKILLS          = File.join(REPO_ROOT, ".claude", "skills")
+HISTORY_SCRIPT  = File.join(SKILLS, "individual-history", "scripts", "history.rb")
+REQ_SCRIPT      = File.join(SKILLS, "scout-req", "scripts", "req.rb")
+ACTIVITY_SCRIPT = File.join(SKILLS, "import-activities-history", "scripts", "activities.rb")
+SETTINGS        = File.join(REPO_ROOT, "TROOP-SETTINGS.md")
 
 STALE_DAYS   = 30
 EAGLE_AGE    = 18
@@ -125,6 +126,41 @@ RANK_LADDER = ["Scout", "Tenderfoot", "Second Class", "First Class",
 POR_MONTHS    = { "Star" => 4, "Life" => 6, "Eagle" => 6 }.freeze
 ACTIVE_MONTHS = { "Star" => 4, "Life" => 6, "Eagle" => 6 }.freeze
 ACTIVE_FROM   = { "Star" => "First Class", "Life" => "Star", "Eagle" => "Life" }.freeze
+
+# Hours of service a rank asks for, and how many of them Life wants to be
+# conservation-related. Thresholds and match keys, not the requirement — the
+# wording that governs is `req.rb show Star` and `req.rb show Life`, and it is
+# the wording that says what counts as service at all.
+#
+# Three things about the arithmetic, all of them confirmed against the figures
+# TroopMaster printed on the Target Eagle report this replaced, and none of them
+# guessable:
+#
+#   * **Hours count only while holding the prior rank**, so they are always
+#     clipped to the Scout's own `rank_date`. Hours banked before it are real
+#     hours and count toward nothing here.
+#   * **Conservation hours count toward the total**, not separately from it. A
+#     Scout with two conservation hours and one service hour has three of six.
+#   * **Life's shortfall is the larger of the two gaps.** A Scout seven hours in
+#     with no conservation still owes three; a Scout three hours in with two of
+#     them conservation also owes three. Both cases appear in the troop's own
+#     data and only this reading reproduces what TroopMaster printed for them.
+#
+# Eagle is deliberately absent: its requirement 5 is the service *project*, not
+# a number of hours, and it is already an `INDIVIDUAL_LABELS` item downstream.
+SERVICE_HOURS = { "Star" => { hours: 6, conservation: 0 },
+                  "Life" => { hours: 6, conservation: 3 } }.freeze
+
+# The activity types on the participation report that count toward those hours.
+# `verify` asserts both still exist in the imported data, because a troop that
+# renames an activity type silently zeroes every service figure in every plan.
+SERVICE_TYPES     = ["Serv Proj", "Conservation"].freeze
+CONSERVATION_TYPE = "Conservation"
+
+# A cabin night is not a Camping req. 9a night. The page legend defines `#` as
+# cabin camping and `+` as a pitched tent; a row carrying neither says nothing
+# either way, so those are counted and reported separately rather than assumed.
+CABIN_MARKER = "#"
 
 # The 13 Eagle-required slots, each an OR-group. Third copy; see the header.
 EAGLE_SLOTS = [
@@ -178,8 +214,16 @@ CLOCKS = [
     note: "req. 5 maintains a bin or garden for 90 days" },
   { badge: "Multisport", req: "5", span: "4 weeks", days: 28,
     note: "req. 5 is a four-week training plan with a tracked chart" },
+  # The one opportunity clock the participation report can put a number on. It
+  # stays undated — nights are not a span of calendar — but "how many are
+  # already logged" turns it from an unbounded ask into a countable one.
   { badge: "Camping", req: "9", span: "20 nights", days: nil,
+    counts: { type: "Camping", need: 20, unit: "nights", record: "nights_camping" },
     note: "req. 9a is 20 nights of camping; 9b needs two outdoor activities" },
+  # Deliberately *not* counted, though the report carries hours that look like
+  # they would fit. Req. 7c's hours are for the Scout's chosen organization, and
+  # the troop's own service projects are not that. Counting `Serv Proj` toward
+  # it would credit a Scout with work the requirement does not accept.
   { badge: "Citizenship in the Community", req: "7", span: "8 volunteer hours", days: nil,
     note: "req. 7c volunteers 8 hours for the chosen organization" }
 ].freeze
@@ -250,6 +294,72 @@ module Record
   def text(args)
     out, _err, status = Open3.capture3(RbConfig.ruby, HISTORY_SCRIPT, *args)
     status.success? ? out : nil
+  end
+end
+
+# --------------------------------------------------------------------------
+# the participation log, which is the *only* source of a quantity
+# --------------------------------------------------------------------------
+#
+# The Individual History record says a requirement is unsigned. It cannot say
+# how much of it is done, because it holds no dated quantities at all. Service
+# hours, conservation hours, and camping nights come from the Individual
+# Participation report instead, via `import-activities-history`.
+#
+# **That report is optional and everything here degrades without it.** A troop
+# that has not imported one gets the plan this script wrote before the report
+# existed, plus a note saying which figures are missing and why. Nothing fails,
+# because a missing supplementary report must never take out a plan.
+module Activity
+  module_function
+
+  def for_scout(rec)
+    return nil unless File.exist?(ACTIVITY_SCRIPT)
+
+    out, _err, status = Open3.capture3(RbConfig.ruby, ACTIVITY_SCRIPT, "json", rec["name"])
+    return nil unless status.success?
+
+    JSON.parse(out)
+  rescue JSON::ParserError
+    nil
+  end
+
+  def all
+    return [] unless File.exist?(ACTIVITY_SCRIPT)
+
+    out, _err, status = Open3.capture3(RbConfig.ruby, ACTIVITY_SCRIPT, "json")
+    return [] unless status.success?
+
+    parsed = JSON.parse(out)
+    parsed.is_a?(Array) ? parsed : [parsed]
+  rescue JSON::ParserError
+    []
+  end
+
+  # Rows of the given types on or after `since`. `since` of nil means the whole
+  # window the report was run over.
+  def rows(log, types, since)
+    log["activities"].select do |act|
+      next false unless types.include?(act["type"])
+
+      on = date_of(act["on_date"])
+      on && (since.nil? || on >= since)
+    end
+  end
+
+  def total(rows) = rows.sum { |act| act["amount"].to_f }
+
+  def window_start(log) = date_of(log.dig("scout", "window_start"))
+
+  # The report's date range is a filter, not a Scout's history: anything before
+  # it is absent rather than zero. A clip that starts before the window would
+  # therefore run short, and running short on service hours reads as a Scout who
+  # owes work they have already done. Say so instead of answering.
+  def covers?(log, since)
+    start = window_start(log)
+    return false if start.nil?
+
+    since.nil? || since >= start
   end
 end
 
@@ -365,6 +475,58 @@ module Tenure
       end
     end
     merged.sum { |low, high| (high - low).to_i }
+  end
+end
+
+# --------------------------------------------------------------------------
+# service hours — the one open requirement whose *size* is knowable
+# --------------------------------------------------------------------------
+#
+# Everything else in a rank is done or not done. Service is a quantity, and
+# "three hours short, one of which must be conservation" is a different
+# instruction to a Scout than "you still owe the service requirement" — it is
+# one Saturday morning rather than an unbounded ask. See `SERVICE_HOURS` for
+# the three facts the arithmetic rests on.
+module Service
+  module_function
+
+  # nil when this rank asks for no hours at all, or the requirement is already
+  # signed. Otherwise always a hash: when the figures cannot be had, it carries
+  # `unusable` saying why, because "we cannot count this" is itself worth
+  # printing where a plan would otherwise imply the work is unbounded.
+  def owed(rec, rank, log)
+    need = SERVICE_HOURS[rank]
+    return nil if need.nil? || Status.signed?(rec, rank, LABELS[:service])
+
+    base  = { rank: rank, need: need[:hours], conservation_need: need[:conservation] }
+    since = date_of(rec["rank_date"])
+    reason = unusable(log, since, rank)
+    return base.merge(unusable: reason) if reason
+
+    base.merge(counted(log, since, need))
+  end
+
+  def unusable(log, since, rank)
+    return "no participation report imported — run import-activities-history" if log.nil?
+    return "no #{ACTIVE_FROM[rank]} rank date in the record" if since.nil?
+    return nil if Activity.covers?(log, since)
+
+    "the participation report only covers #{Activity.window_start(log)} onward, and this " \
+      "Scout earned #{ACTIVE_FROM[rank]} on #{since} — hours before it are missing from the " \
+      "report, so any count would run short. Re-run it with a wider date range."
+  end
+
+  def counted(log, since, need)
+    rows  = Activity.rows(log, SERVICE_TYPES, since)
+    hours = Activity.total(rows)
+    cons  = Activity.total(rows.select { |r| r["type"] == CONSERVATION_TYPE })
+    # The larger of the two gaps, never their sum: conservation hours are part
+    # of the six, not extra to them.
+    short = [need[:hours] - hours, need[:conservation] - cons].max
+    { since: since, hours: hours, conservation: cons, projects: rows.size,
+      short: [short, 0.0].max,
+      conservation_short: [need[:conservation] - cons, 0.0].max,
+      met: short <= 0 }
   end
 end
 
@@ -557,10 +719,41 @@ module Clocks
     detail = "#{clock[:span]} — #{clock[:note]}"
     unless clock[:days]
       return row(:opportunity, label, detail, nil,
-                 reason: "scheduled against an opportunity, not a span of calendar")
+                 reason: "scheduled against an opportunity, not a span of calendar",
+                 counted: counted(clock, opts))
     end
 
     row(:work, label, detail, opts[:start] + clock[:days], days: clock[:days])
+  end
+
+  # How much of an opportunity clock is already banked. It stays undated —
+  # twenty nights is not a span of calendar, and inventing a date for it is the
+  # error `[opportunity]` exists to avoid — but the count turns an unbounded ask
+  # into "six more nights", which is schedulable against real campouts.
+  #
+  # The headline figure is **TroopMaster's own lifetime total out of the
+  # record**, not the participation log, because req. 9a's nights are a lifetime
+  # total and the participation report's date range is only a window: a Scout
+  # who camped before it would come out short. The log supplies what the record
+  # cannot — the recent rate, and how many of those nights were in a cabin,
+  # which req. 9a does not accept.
+  def counted(clock, opts)
+    spec = clock[:counts] or return nil
+
+    have = opts[:record][spec[:record]].to_f
+    base = { unit: spec[:unit], need: spec[:need], have: have,
+             short: [spec[:need] - have, 0].max }
+    log = opts[:log] or return base
+
+    base.merge(recent(log, spec))
+  end
+
+  def recent(log, spec)
+    rows  = Activity.rows(log, [spec[:type]], nil)
+    cabin = rows.select { |r| r["marker"].to_s.include?(CABIN_MARKER) }
+    { recent: Activity.total(rows), recent_since: Activity.window_start(log)&.to_s,
+      outings: rows.size, cabin: Activity.total(cabin),
+      unmarked: rows.count { |r| r["marker"].to_s.empty? } }
   end
 
   # A badge nobody has started has every requirement open; a partial's open list
@@ -571,8 +764,9 @@ module Clocks
     partial["open_reqts"].split(",").map(&:strip).any? { |code| code[/\A\d+/] == want }
   end
 
-  def row(kind, label, detail, earliest, reason: nil, days: nil)
-    { kind: kind, label: label, detail: detail, earliest: earliest, reason: reason, days: days }
+  def row(kind, label, detail, earliest, reason: nil, days: nil, counted: nil)
+    { kind: kind, label: label, detail: detail, earliest: earliest, reason: reason,
+      days: days, counted: counted }
   end
 
   # `--by` turns an earliest date into a verdict. A work-start clock also gets a
@@ -774,6 +968,7 @@ module Render
     puts format("  %-13s %-38s %-14s %s", KIND[row[:kind]], row[:label],
                 day(row[:earliest]), v[:text])
     puts format("  %13s %s", "", row[:detail]) if row[:detail]
+    counted_line(row[:counted])
     # A row that has both a date and a reason is one already satisfied on the
     # calendar and waiting on a signature — worth saying, since it is a
     # conversation rather than a clock.
@@ -783,6 +978,62 @@ module Render
     puts format("  %13s %s %s to make the target", "",
                 row[:chain] ? "the chain must start by" : "start by", day(v[:start_by]))
   end
+
+  # An opportunity clock stays undated, but saying how much is banked turns
+  # "twenty nights" into "six more nights", which is schedulable.
+  def counted_line(counted)
+    return if counted.nil?
+
+    short = counted[:short]
+    state = short.positive? ? "#{qty(short)} more to go" : "met"
+    banked = "#{qty(counted[:have])} of #{counted[:need]} #{counted[:unit]} " \
+             "on the record — #{state}"
+    puts format("  %13s %s", "", banked)
+    puts format("  %13s %s", "", recent_line(counted)) if counted[:recent]
+  end
+
+  # The record's total is TroopMaster's own and covers the Scout's whole career;
+  # the participation log only covers its own window, so it is reported as a
+  # rate rather than as a total, and the cabin nights it can see are a caveat on
+  # the record's figure rather than a subtraction from it.
+  def recent_line(counted)
+    parts = ["#{qty(counted[:recent])} of them since #{counted[:recent_since]}, " \
+             "across #{counted[:outings]} outings"]
+    parts << "#{qty(counted[:cabin])} in a cabin, which req. 9a does not count" if
+      counted[:cabin].to_f.positive?
+    n = counted[:unmarked].to_i
+    parts << "#{n} outing#{'s' unless n == 1} marked neither tent nor cabin" if n.positive?
+    parts.join("; ")
+  end
+
+  # Hours and nights arrive as floats and are mostly whole; "3" reads better
+  # than "3.0" and "2.5" has to survive.
+  def qty(value)
+    value = value.to_f
+    value == value.to_i ? value.to_i.to_s : format("%.1f", value)
+  end
+
+  # The tail on the ladder's Service Project line.
+  def service_tail(service)
+    return "   #{service[:unusable]}" if service[:unusable]
+
+    done = "#{qty(service[:hours])} of #{service[:need]} hours since #{day(service[:since])}"
+    done += ", #{qty(service[:conservation])} of #{service[:conservation_need]} conservation" if
+      service[:conservation_need].positive?
+    return "   #{done} — met; it needs signing" if service[:met]
+
+    "   #{done} — #{qty(service[:short])} short#{conservation_tail(service)}"
+  end
+
+  # Life asks for three conservation hours *within* the six, so a Scout can be
+  # short on conservation while not short on hours at all. Saying only "3 short"
+  # there sends them to any service project, and the wrong kind does not close it.
+  def conservation_tail(service)
+    short = service[:conservation_short].to_f
+    return "" unless short.positive?
+
+    ", at least #{qty(short)} of it conservation"
+  end
 end
 
 # --------------------------------------------------------------------------
@@ -791,9 +1042,10 @@ end
 module Plan
   module_function
 
-  def ladder(rec)
+  def ladder(rec, opts)
     puts "LADDER — ranks must be earned in sequence (GTA 4.2.0.1)"
-    Ladder.rungs(rec).each { |rung| rung_line(rung) }
+    service = Service.owed(rec, Status.next_rank(rec), opts[:log])
+    Ladder.rungs(rec).each { |rung| rung_line(rung, service) }
     banked = Ladder.banked(rec)
     if banked.positive?
       puts "\n  #{banked} requirements are already signed above the working rank — " \
@@ -805,15 +1057,26 @@ module Plan
     Ladder.out_of_order(rec).each { |note| puts "  !! #{note}" }
   end
 
-  def rung_line(rung)
+  def rung_line(rung, service = nil)
     mark = rung[:working] ? "->" : "  "
     n = rung[:open_slots]
     slots = "#{n} merit badge slot#{'s' unless n == 1} open"
     puts format("%<mark>s %<rank>-13s %<open>2d open, %<signed>2d signed, %<slots>s",
                 mark: mark, rank: rung[:rank], open: rung[:open].size,
                 signed: rung[:signed], slots: slots)
-    rung[:open].each { |r| puts format("       [ ] %-8s %s", r["req_id"] || "", r["label"]) } if
-      rung[:working]
+    return unless rung[:working]
+
+    rung[:open].each { |r| puts open_line(r, service) }
+  end
+
+  # Every open requirement is a checkbox except service, which is a quantity —
+  # "3 of 6 hours, 1 of them conservation" is a Saturday morning, where "you owe
+  # the service requirement" is an unbounded ask.
+  def open_line(req, service)
+    line = format("       [ ] %-8s %s", req["req_id"] || "", req["label"])
+    return line unless service && req["label"] == LABELS[:service]
+
+    "#{line}#{Render.service_tail(service)}"
   end
 
   def clocks(rec, opts, target)
@@ -886,8 +1149,27 @@ module Verify
     recs = Record.all
     die "nothing imported yet — run the import-individual-history skill first" if recs.empty?
 
-    problems = badge_names + labels(recs) + chain(recs) + slots(recs) + tenure(recs)
+    problems = badge_names + labels(recs) + chain(recs) + slots(recs) + tenure(recs) +
+               activity_types
     report(problems, recs.size)
+  end
+
+  # The service figures are computed by matching TroopMaster activity *types*,
+  # which are the troop's own configuration and can be renamed in an afternoon.
+  # A renamed type does not error: it silently totals zero, and every Star and
+  # Life Scout is then told to do six hours they may already have done. Checked
+  # only when a participation report has been imported, because the report is
+  # optional and its absence is a note in the plan rather than a broken rule.
+  def activity_types
+    logs = Activity.all
+    return [] if logs.empty?
+
+    seen = logs.flat_map { |log| log["totals"].keys }.uniq
+    wanted = SERVICE_TYPES + CLOCKS.filter_map { |c| c[:counts]&.dig(:type) }
+    wanted.uniq.reject { |type| seen.include?(type) }.map do |type|
+      "activity type #{type.inspect} is in a table here but in no imported " \
+        "participation report"
+    end
   end
 
   def report(problems, count)
@@ -976,17 +1258,18 @@ module Brief
 
   def call(rec, opts, target)
     Render.header(rec, target)
-    Plan.ladder(rec)
+    Plan.ladder(rec, opts)
     puts
     Plan.clocks(rec, opts, target[:date])
     puts
     Plan.badges(rec)
     puts
-    notes(rec, target)
+    notes(rec, target, opts)
   end
 
-  def notes(rec, target)
-    lines = [*freshness_note(rec), *dob_note(rec), *target[:note], *stalled_note(rec)]
+  def notes(rec, target, opts)
+    lines = [*freshness_note(rec), *dob_note(rec), *target[:note], *stalled_note(rec),
+             *participation_note(rec, opts)]
     return if lines.empty?
 
     puts "NOTES"
@@ -1014,6 +1297,19 @@ module Brief
     ["#{idle.size} partial(s) with no recorded progress in over a year: " \
      "#{idle.map { |p, d| "#{p['name']} (#{d}d)" }.join(', ')}"]
   end
+
+  # Said once, at the bottom, rather than beside every figure it costs. Without
+  # the participation report a plan is not wrong — it is the plan this script
+  # wrote before the report existed — but the reader should know which numbers
+  # are absent rather than zero.
+  def participation_note(rec, opts)
+    return [] if opts[:log]
+    return [] unless SERVICE_HOURS.key?(Status.next_rank(rec))
+
+    ["no Individual Participation data for this Scout, so the service hours already " \
+     "done cannot be counted and the plan can only say the requirement is open. " \
+     "Run the import-activities-history skill."]
+  end
 end
 
 # --------------------------------------------------------------------------
@@ -1027,15 +1323,33 @@ def as_json(rec, opts, target)
     target: target.transform_values { |v| v.is_a?(Date) ? v.to_s : v },
     ladder: Ladder.rungs(rec).map { |r| r.merge(open: r[:open].map { |o| o["label"] }) },
     banked: Ladder.banked(rec),
-    clocks: Clocks.rows(rec, opts).map do |row|
-      row.merge(earliest: row[:earliest]&.to_s, verdict: Clocks.verdict(row, target[:date]))
-         .transform_values { |v| v.is_a?(Date) ? v.to_s : v }
-    end,
-    eagle_slots: Status.eagle_slots(rec).map do |s|
-      { label: s[:label], earned: s[:earned]&.dig("name"), partial: s[:partial]&.dig("name"),
-        percent: s[:partial]&.dig("percent") }
-    end,
+    service: json_service(rec, opts),
+    clocks: json_clocks(rec, opts, target),
+    eagle_slots: json_slots(rec),
     partials: Badges.by_cost(rec), prereqs: Badges.prereqs(rec) }
+end
+
+# nil when the rank asks for no hours or the requirement is already signed;
+# otherwise always present, carrying `unusable` when the figures cannot be had.
+# `troop.rb` reads this rather than opening the participation cache itself, so
+# the troop plan and the individual plans cannot disagree about a Scout.
+def json_service(rec, opts)
+  Service.owed(rec, Status.next_rank(rec), opts[:log])
+         &.transform_values { |v| v.is_a?(Date) ? v.to_s : v }
+end
+
+def json_clocks(rec, opts, target)
+  Clocks.rows(rec, opts).map do |row|
+    row.merge(earliest: row[:earliest]&.to_s, verdict: Clocks.verdict(row, target[:date]))
+       .transform_values { |v| v.is_a?(Date) ? v.to_s : v }
+  end
+end
+
+def json_slots(rec)
+  Status.eagle_slots(rec).map do |s|
+    { label: s[:label], earned: s[:earned]&.dig("name"), partial: s[:partial]&.dig("name"),
+      percent: s[:partial]&.dig("percent") }
+  end
 end
 
 USAGE = <<~TEXT
@@ -1089,13 +1403,17 @@ if command == "verify"
 end
 
 die USAGE unless name
-opts   = { start: start_on, test_date: test_date, shared_6bc: shared }
 target = Horizon.target(by)
 rec    = Record.one(name)
+# One subprocess per run, not one per figure. `log` is nil whenever the
+# participation report has not been imported or has nothing for this Scout, and
+# everything downstream is written to degrade rather than fail on that.
+opts = { start: start_on, test_date: test_date, shared_6bc: shared,
+         record: rec, log: Activity.for_scout(rec) }
 
 case command
 when "brief"  then Brief.call(rec, opts, target)
-when "ladder" then Plan.ladder(rec)
+when "ladder" then Plan.ladder(rec, opts)
 when "clocks"
   Render.header(rec, target)
   Plan.clocks(rec, opts, target[:date])

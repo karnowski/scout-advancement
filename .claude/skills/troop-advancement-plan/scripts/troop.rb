@@ -430,6 +430,44 @@ module Themes
 end
 
 # --------------------------------------------------------------------------
+# service hours — the one theme whose size is knowable
+# --------------------------------------------------------------------------
+#
+# `themes` says a service project would produce N sign-offs. For Star and Life
+# it can say more than that, because service is a quantity: **how many hours the
+# cohort still owes between them**, which is what decides whether one Saturday
+# morning closes it or three do.
+#
+# Every figure is read straight out of `plan.rb json`, never recomputed here.
+# The rank date each Scout's hours are clipped to, the six-hour threshold, and
+# Life's conservation condition all live there, so the troop plan and the
+# individual plans cannot disagree about a Scout down to the hour.
+module ServiceWork
+  module_function
+
+  def rows(plans)
+    plans.filter_map do |plan|
+      service = plan["service"] or next
+
+      service.transform_keys(&:to_sym).merge(name: plan["scout"]["name"])
+    end
+  end
+
+  def summary(rows)
+    counted, blocked = rows.partition { |row| row[:unusable].nil? }
+    owing = counted.reject { |row| row[:met] }.sort_by { |row| -row[:short].to_f }
+    { scouts: rows.size, blocked: blocked, met: counted.size - owing.size, owing: owing,
+      hours: owing.sum { |row| row[:short].to_f },
+      # Not a subtotal of `hours`: Life's conservation hours are part of the six,
+      # so this is how much of the same shortfall has to be conservation work
+      # specifically. A troop that books a park cleanup closes both; one that
+      # books a food drive closes only the first.
+      conservation: owing.sum { |row| row[:conservation_short].to_f },
+      needing_conservation: owing.count { |row| row[:conservation_short].to_f.positive? } }
+  end
+end
+
+# --------------------------------------------------------------------------
 # cohorts — who is working on what, and how close they are
 # --------------------------------------------------------------------------
 module Cohorts
@@ -520,11 +558,26 @@ module Clocks
     details = entries.map { |(_, clock)| clock["detail"] }.uniq
     { kind: kind, label: label, scouts: entries.size,
       detail: details.size == 1 ? details.first : nil,
+      **banked(entries),
       start_by: starts.first, start_by_varies: starts.size > 1,
       makes: entries.count { |(_, c)| c.dig("verdict", "makes") == true },
       misses: entries.count { |(_, c)| c.dig("verdict", "makes") == false },
       undated: entries.count { |(_, c)| c.dig("verdict", "makes").nil? },
       who: entries.map { |(plan, _)| plan["scout"]["name"] }.sort }
+  end
+
+  # An opportunity clock the participation report can count — at present only
+  # Camping's twenty nights. The roll-up that matters is the *sum* of what the
+  # cohort is short, because that is what gets compared against the number of
+  # nights the calendar actually offers before the target date. It stays out of
+  # `detail`, which is per Scout and deliberately suppressed for a group.
+  def banked(entries)
+    counted = entries.filter_map { |(_, clock)| clock["counted"] }
+    return {} if counted.empty?
+
+    behind = counted.select { |c| c["short"].to_f.positive? }
+    { unit: counted.first["unit"], short: behind.sum { |c| c["short"].to_f },
+      behind: behind.size, banked_met: counted.size - behind.size }
   end
 
   def soon(rows, days)
@@ -753,6 +806,13 @@ module Render
     last, first = name.split(", ", 2)
     first ? "#{first} #{last[0]}." : name
   end
+
+  # Hours and nights arrive as floats and are mostly whole; "3" reads better
+  # than "3.0", and "2.5" has to survive.
+  def qty(value)
+    value = value.to_f
+    value == value.to_i ? value.to_i.to_s : format("%.1f", value)
+  end
 end
 
 # --------------------------------------------------------------------------
@@ -804,7 +864,7 @@ module Show
     puts
   end
 
-  def themes(rows, min)
+  def themes(rows, min, service = nil)
     Render.section("PROGRAM THEMES — what one session is worth")
     puts "signs = sign-offs available across every unearned rank, which is what the"
     puts "session is worth; at-rank = the subset that counts toward the rank its Scout"
@@ -816,8 +876,44 @@ module Show
 
       puts title.upcase
       group.each { |row| puts theme_lines(row) }
+      service_lines(service) if venue == :service
       puts
     end
+  end
+
+  # The service theme is the only one whose size is knowable, so it gets the
+  # hours as well as the sign-off count. A sign-off count says how many Scouts a
+  # project serves; the hours say how many mornings it takes.
+  def service_lines(service)
+    return if service.nil? || service[:scouts].zero?
+
+    if service[:owing].empty?
+      puts "#{' ' * 17}every Star and Life Scout has their hours; the rest is signatures"
+    else
+      puts format("    %-12s %s still owed between %s at Star or Life%s", "",
+                  "#{Render.qty(service[:hours])} hours",
+                  plural(service[:owing].size, "Scout"), conservation_note(service))
+      puts format("    %-12s %s", "", Render.names(service[:owing].map { |r| r[:name] }, 8))
+    end
+    blocked(service[:blocked])
+  end
+
+  # Usually every blocked Scout is blocked for the same reason — nobody has
+  # imported a participation report — so it is said once with a count. A mixed
+  # list is the interesting case and stays per Scout.
+  def blocked(rows)
+    rows.group_by { |row| row[:unusable] }.each do |reason, group|
+      puts format("    %-12s %s: %s", "", Render.names(group.map { |r| r[:name] }, 4), reason)
+    end
+  end
+
+  # Life asks for three of its six hours to be conservation-related, so a troop
+  # that books the wrong kind of project closes fewer hours than it thinks.
+  def conservation_note(service)
+    return "" unless service[:needing_conservation].positive?
+
+    ", of which #{Render.qty(service[:conservation])} must be conservation work " \
+      "(#{service[:needing_conservation]} of them)"
   end
 
   def theme_lines(row)
@@ -857,7 +953,24 @@ module Show
     verdict << "#{row[:undated]} with no date" if row[:undated].positive?
     verdict << "start-by varies by Scout" if row[:start_by_varies]
     [row[:detail] ? [head, format("    %-13s %s", "", row[:detail])] : head,
+     *banked_line(row),
      format("    %-13s %s", "", verdict.join("; "))]
+  end
+
+  # "34 nights short between 6 Scouts" is the number to take to the calendar:
+  # compare it against the nights the campouts before the target date offer.
+  def banked_line(row)
+    return [] unless row[:unit]
+
+    parts = []
+    if row[:behind].positive?
+      parts << "#{Render.qty(row[:short])} #{row[:unit]} short between " \
+               "#{plural(row[:behind], 'Scout')} — count that against the campouts on the " \
+               "calendar before the target"
+    end
+    parts << "#{plural(row[:banked_met], 'Scout')} already have the #{row[:unit]}" if
+      row[:banked_met].positive?
+    parts.map { |part| format("    %-13s %s", "", part) }
   end
 
   def load(row, per_meeting)
@@ -1054,7 +1167,7 @@ module Brief
     Show.cohorts(state[:cohorts])
     Show.banked(state[:cohorts], opts[:min_banked])
     Show.load(state[:load], opts[:per_meeting])
-    Show.themes(state[:themes], opts[:min])
+    Show.themes(state[:themes], opts[:min], state[:service])
     Show.clocks(state[:clocks], opts[:soon])
     Show.badges(state[:slots], state[:partials], state[:stalled], opts[:min])
     Show.attention(state[:attention])
@@ -1069,8 +1182,9 @@ def build(state, opts)
       per_meeting: opts[:per_meeting], meeting_nights: Load.meetings(state[:load],
                                                                      opts[:per_meeting])
     ),
-    themes: state[:themes], clocks: state[:clocks], eagle_slots: state[:slots],
-    partials: state[:partials], stalled: state[:stalled], attention: state[:attention] }
+    themes: state[:themes], service: state[:service], clocks: state[:clocks],
+    eagle_slots: state[:slots], partials: state[:partials], stalled: state[:stalled],
+    attention: state[:attention] }
 end
 
 USAGE = <<~TEXT.freeze
@@ -1175,6 +1289,7 @@ state[:slots]     = BadgeWork.slots(plans)
 state[:partials]  = BadgeWork.partials(plans)
 state[:stalled]   = BadgeWork.stalled(plans, opts[:stalled])
 state[:attention] = Attention.rows(pairs, plans, opts)
+state[:service]   = ServiceWork.summary(ServiceWork.rows(plans))
 
 case command
 when "brief" then Brief.call(state, opts)
@@ -1182,7 +1297,7 @@ when "cohorts"
   Render.header(plans, pairs.size, plans.first["target"])
   Show.cohorts(state[:cohorts])
   Show.banked(state[:cohorts], opts[:min_banked])
-when "themes"    then Show.themes(state[:themes], opts[:min])
+when "themes"    then Show.themes(state[:themes], opts[:min], state[:service])
 when "clocks"    then Show.clocks(state[:clocks], opts[:soon])
 when "load"      then Show.load(state[:load], opts[:per_meeting])
 when "badges"    then Show.badges(state[:slots], state[:partials], state[:stalled], opts[:min])

@@ -155,6 +155,54 @@ Three consequences worth stating in the plan:
   nights of camping with two campouts on the calendar is a different problem
   from one blocked on a 90-day log, and the plan should not make them look alike.
 
+An opportunity still has a *size*, though, and where the record can supply one
+the row carries it:
+
+```
+[opportunity] Camping req. 9                       —   scheduled against an opportunity
+              20 nights — req. 9a is 20 nights of camping
+              16 of 20 nights on the record — 4 more to go
+              16 of them since 2025-01-03, across 7 outings
+```
+
+The headline figure is TroopMaster's own **lifetime** total out of the record,
+because req. 9a's nights are a lifetime count. The second line comes from the
+Individual Participation report and is only the recent rate, because that
+report's date range is a window — a Scout who camped before it would come out
+short if the window were used as the total. Where the report can see cabin
+nights it says so, since req. 9a does not accept them.
+
+### Service hours are a quantity, and the plan says how many
+
+Every other open requirement is a checkbox. Service is not, and "3 of 6 hours,
+at least 1 of it conservation" is a Saturday morning where "you still owe the
+service requirement" is an unbounded ask. The working rank's line carries it:
+
+```
+[ ]          Service Project   3 of 6 hours since Aug 16, 2025, 2 of 3 conservation
+                               — 3 short, at least 1 of it conservation
+```
+
+The hours come from `import-activities-history`, clipped to the Scout's own
+rank date. Three things about the arithmetic, all confirmed against the figures
+TroopMaster printed on the Target Eagle report this replaced:
+
+- **Hours count only while holding the prior rank.** Hours banked before the
+  rank date are real hours and count toward nothing here.
+- **Conservation hours count toward the total**, not separately from it.
+- **Life's shortfall is the larger of the two gaps**, never their sum. A Scout
+  eight hours in with no conservation still owes three, and a Scout three hours
+  in with two of them conservation also owes three. Both cases are in the
+  troop's data and only this reading reproduces what TroopMaster printed.
+
+**The participation report is optional and everything degrades without it.**
+With no report the line reads `no participation report imported`, a note at the
+bottom says which figures are missing, and the rest of the plan is unchanged.
+If the report's date range starts *after* the Scout earned their rank the line
+says so and gives no number at all, because a count would run short — and
+running short on service hours reads as a Scout who owes work they have already
+done.
+
 ### The position of responsibility is where plans go wrong
 
 `clocks` prints one `[elapsed]` row for it, and the two failure modes read very
@@ -280,6 +328,10 @@ board stays a separate line because it is not a troop board.
 
 - **individual-history** — what the record says. Every claim in the plan should
   be checkable against `history.rb show NAME`.
+- **import-activities-history** — the only source of a *quantity*: service
+  hours, conservation hours, and camping nights, each dated, so they can be
+  clipped to a rank date. Optional; without it the plan says a requirement is
+  open and cannot say how much of it is done.
 - **scout-req** — the requirement text, and the only thing that knows whether a
   badge is still current. Use it for **every requirement the plan names**: the
   record gives a code like `8d` and a label like `4c. Tell How to Prevent
@@ -427,7 +479,23 @@ invented.
   rule, and its own chance to describe a Scout the reporting skill does not.
 - **The three kinds of clock are the whole design** — see the table above. An
   `[elapsed]` date read as `[work]`, or an `[opportunity]` given a date at all,
-  produces a plan that is specific, confident, and wrong.
+  produces a plan that is specific, confident, and wrong. An opportunity may
+  carry a *size* — nights banked, hours banked — and still no date; the two are
+  different claims.
+- **Service hours are clipped to the rank date, conservation counts toward the
+  six, and Life's shortfall is the larger of the two gaps** — see the section
+  above, and `SERVICE_HOURS` in the script. Summing the two gaps double-counts;
+  ignoring the conservation one sends a Scout to the wrong kind of project.
+- **`SERVICE_TYPES` and the `counts:` entries in `CLOCKS` are activity-type
+  match keys**, and the types are the troop's own TroopMaster configuration
+  rather than anything in the book. A renamed type does not error — it totals
+  zero, and every Star and Life Scout is then told to do six hours they may
+  already have done. `verify` checks each against the imported participation
+  data whenever any has been imported.
+- **Citizenship in the Community req. 7 is deliberately not counted**, though
+  the participation report carries hours that look as though they would fit.
+  Req. 7c's hours are for the Scout's chosen organization, and the troop's own
+  service projects are not that.
 - **A sign-off date on the previous link does not start the next one.** A Scout
   whose Tenderfoot 6a was signed six months ago has not banked 30 days of 6b
   tracking — 6b is a log the Scout keeps, and nobody kept it. The record's dates

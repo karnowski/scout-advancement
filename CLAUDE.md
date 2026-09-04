@@ -340,8 +340,13 @@ one Scout at a time:
   event count.  It sums; it applies no threshold.
 - **`plan.rb`** (generate-advancement-plan) — the dated arithmetic behind one
   Scout's plan.  It opens neither a PDF nor the database: **the record comes
-  from `history.rb json`**, so the plan and the report cannot describe different
-  Scouts, and name matching and freshness are the reading skill's.  Its whole
+  from `history.rb json`**, and the dated quantities behind the service hours
+  and the camping nights come from `activities.rb json`, so the plan and the
+  reports cannot describe different Scouts, and name matching and freshness are
+  the reading skills'.  **The participation half is optional and every figure
+  that depends on it degrades rather than fails** — without it a plan says the
+  service requirement is open and cannot say how much of it is done, which is
+  what this script did before that report existed.  Its whole
   design is that **there are three kinds of clock and they are not
   interchangeable.**  *Elapsed* — active participation, POR tenure — is calendar
   time that passes whether or not anyone is working on it, so those dates come
@@ -352,14 +357,26 @@ one Scout at a time:
   not thereby banked 30 days of 6b tracking.  *Opportunity* — Camping's 20
   nights, Citizenship in the Community's 8 hours, Personal Fitness's exams — is
   not a span of calendar at all, and `--by` deliberately prints no date for it,
-  because inventing one is the specific error it exists to avoid.  Two further
-  things are wrong if reinvented: the fitness chain's start-by is **cumulative**,
-  since each link needs the one above it finished, and **a filled merit badge
-  slot is not a signed rank requirement** — counting them together makes every
-  Scout with badges toward Eagle look as though they had banked rank work.  Its
-  `verify` checks no parse, because there is none; it checks that every match key
-  still resolves and that its copies of `EAGLE_SLOTS` and the POR tenure
-  algorithm still agree with what `individual-history` prints, Scout by Scout.
+  because inventing one is the specific error it exists to avoid.  An
+  opportunity may still carry a **size** — Camping's nights print `16 of 20 on
+  the record`, off TroopMaster's own *lifetime* total rather than off the
+  participation window, which would run short for anyone who camped before it —
+  and a size is not a date.  Three further things are wrong if reinvented: the
+  fitness chain's start-by is **cumulative**, since each link needs the one
+  above it finished; **a filled merit badge slot is not a signed rank
+  requirement** — counting them together makes every Scout with badges toward
+  Eagle look as though they had banked rank work; and **service hours are
+  clipped to the rank date, conservation hours count toward the six rather than
+  beside them, and Life's shortfall is the larger of the two gaps and never
+  their sum** (`SERVICE_HOURS`).  Summing them double-counts; ignoring the
+  conservation gap sends a Scout to the wrong kind of project.  Citizenship in
+  the Community req. 7 is deliberately *not* counted from the same data, because
+  its hours are for the Scout's chosen organization and a troop service project
+  is not that.  Its `verify` checks no parse, because there is none; it checks
+  that every match key still resolves — activity types included, whenever a
+  participation report has been imported, since a renamed type silently totals
+  zero — and that its copies of `EAGLE_SLOTS` and the POR tenure algorithm
+  still agree with what `individual-history` prints, Scout by Scout.
 - **`troop.rb`** (troop-advancement-plan) — the cohort arithmetic, and the only
   script in the repo whose input is another skill's *analysis* rather than a
   document or the database.  It runs `plan.rb json` once per Scout, four at a
@@ -367,7 +384,11 @@ one Scout at a time:
   analysis; the sole derivation it makes for itself is which requirements are
   open at a rank, because themes key off `req_id` and `plan.rb json` prints
   labels, and `verify` compares that count against `plan.rb`'s own Scout by
-  Scout.  Three things about it are wrong if reinvented.  **A theme spans every
+  Scout.  **That includes the service hours and the camping nights** — it never
+  opens the participation cache itself, because the rank date, the threshold and
+  the conservation condition all live one layer down, and a troop plan that
+  disagreed with an individual plan about a Scout's hours would be worse than
+  one that never mentioned them.  Three things about it are wrong if reinvented.  **A theme spans every
   unearned rank, not just the working one** — one cooking campout signs
   Tenderfoot 2a, Second Class 2e and First Class 2b at once, so counting only
   the working rank halves what an activity is worth, while counting everything
@@ -568,9 +589,14 @@ The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
 `RANK_LADDER` and `PALM_METALS` in `individual_history.rb`, `EAGLE_SLOTS` and
 `POR_MONTHS` in `history.rb`, and `EAGLE_SLOTS`, `POR_MONTHS`, `ACTIVE_MONTHS`,
-`FITNESS_CHAIN`, `CLOCKS`, and `BADGE_PREREQS` in `plan.rb`, and `THEMES`,
+`FITNESS_CHAIN`, `CLOCKS`, `SERVICE_HOURS`, `SERVICE_TYPES`, and
+`BADGE_PREREQS` in `plan.rb`, and `THEMES`,
 `CLOSING`, and `INDIVIDUAL_LABELS` in `troop.rb` — are **match keys, not a
-second copy of the book.**  The three `EAGLE_SLOTS` tables are the one
+second copy of the book.**  `SERVICE_TYPES` is the odd one out: it names
+TroopMaster *activity types*, which are the troop's own configuration rather
+than anything in the book, and a rename there zeroes every service figure in
+every plan without erroring — `plan.rb verify` checks it against the imported
+participation data for that reason.  The three `EAGLE_SLOTS` tables are the one
 place the repo deliberately *departs* from the book rather than abbreviating it,
 and the reason is written out at `history.rb` above.  Two guards keep them in
 step, and neither covers all three: `plan.rb verify` compares its copy against
