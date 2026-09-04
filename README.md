@@ -327,6 +327,42 @@ writing anything it runs every badge name through `scout-req`, because a
 TroopMaster report is exactly where a badge whose requirements changed in 2026
 enters unannounced.
 
+### `troop-advancement-plan`
+
+Answers **"what do we actually do at the next few meetings and activities?"**
+for the whole troop, from the same stored records.  It is the skill for the
+Scoutmaster and Advancement Chair sitting down to schedule a quarter, and it is
+deliberately not thirty-eight individual plans stapled together: it stops at the
+cohort, and hands any Scout who needs a real plan to `generate-advancement-plan`.
+
+Its central idea is the **program theme**.  Every open requirement in the troop
+is sorted onto the kind of session that could sign it — a meeting night, a
+campout, an outing that needs a pool or an orienteering course, a service
+project — and the tally is reported two ways at once, because the two answer
+different questions.  A cooking campout signs Tenderfoot 2a for one Scout,
+Second Class 2e for another, and First Class 2b for a third, and for a new Scout
+it signs work at all three ranks; that total is what the evening is *worth*.
+Only the sign-offs at each Scout's own working rank convert to a rank now; that
+subset is what it *advances*, and it is the number that decides which court of
+honor the session shows up in.
+
+Three more things fall out of the cohort view that no individual plan asks.
+**A clock is a group decision, not sixty to-do lines** — nineteen Scouts share
+one start-by date for Personal Management's thirteen weeks, which is one
+announcement at one meeting.  **The conference and board load is a capacity
+question**, counted against the troop's per-meeting cap and the meeting nights
+actually on the calendar, with Scout rank's missing board of review and Eagle's
+non-troop board both handled apart.  And **a badge idle for eighteen months
+across a dozen Scouts is a troop finding, not a Scout one**: a group started it
+together and stopped, and someone has to decide whether to finish it or write it
+off.
+
+Every per-Scout number it prints is read back out of `generate-advancement-plan`
+rather than recomputed, so the troop plan and the individual plans cannot
+disagree.  `verify` checks that, checks that every requirement in the data is
+claimed by exactly one of its tables, and refuses to run if the planning skill's
+own verify fails.
+
 ### `badge-inventory`
 
 Answers **"do we have one, and how many?"** — rank patches and rank pins,

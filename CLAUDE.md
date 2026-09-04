@@ -76,6 +76,13 @@ plans and in answers to the Advancement Chair; they just never reach git.
   requirements, merit badges, and the position of responsibility.  It plans; it
   does not report, and it does **one Scout at a time** — cohort work, batch
   sessions, and meeting-night throughput are deliberately not here.
+- `.claude/skills/troop-advancement-plan/` — the cohort half of that: what the
+  troop does at its next few meetings and activities.  It sorts every open
+  requirement onto the kind of session that could sign it, rolls the clocks up
+  by clock rather than by Scout, counts the conference and board load against
+  meeting-night capacity, and names the handful of Scouts who need an adult.  It
+  plans for the troop, never for a Scout; every per-Scout number it prints is
+  read back out of `generate-advancement-plan`.
 - `reports/` — where to drop the TroopMaster PDFs a skill is asked to read.
   Gitignored; look here first when a skill needs a report and none was named.
 - `plans/` — generated advancement plans, gitignored.  Named
@@ -86,7 +93,9 @@ plans and in answers to the Advancement Chair; they just never reach git.
   the same scope on the same report overwrite; don't invent `-backup` names.
   `generate-advancement-plan` names its per-Scout plans
   `advancement-plan-{lastname}-{firstname}-YYYY-MM-DD.md`, lowercased, still
-  dated from the report the record came from rather than from today.
+  dated from the report the record came from rather than from today, and
+  `troop-advancement-plan` names its own
+  `troop-advancement-plan-YYYY-MM-DD.md`, dated the same way.
 
 - `Gemfile` / `Gemfile.lock` — the gems the skill scripts depend on.
 - `.rubocop.yml` / `.rubocop_todo.yml` — lint configuration (see below).
@@ -115,7 +124,7 @@ from the todo file when its method is broken up; don't add new ones.
 Scripts are Ruby 3.4.5 (via asdf) and use gems, declared in the repo-root
 `Gemfile`. Install with `bundle install`.
 
-Six of the nine skills also need **`pdftotext`**, and `scout-req` additionally
+Six of the thirteen skills also need **`pdftotext`**, and `scout-req` additionally
 needs **`pdftohtml`** — the latter for `req.rb`; the sibling `changes.rb` needs
 only `pdftotext`, plus the `pdf-reader` gem for the table's drawn borders.  Both
 come from poppler, and neither is a gem, so `bundle install` alone leaves a
@@ -123,7 +132,8 @@ fresh clone unable to run them:
 
     brew install poppler
 
-`troop-calendar`, `eagle-req`, and `badge-inventory` need neither.  `eagle-req`
+`troop-calendar`, `eagle-req`, `badge-inventory`, `individual-history`,
+`generate-advancement-plan`, and `troop-advancement-plan` need neither.  `eagle-req`
 in particular reads its PDF with the `pdf-reader` gem *because* poppler gets
 that file wrong; see below.
 
@@ -147,8 +157,10 @@ before anything else, so no `bundle exec` prefix is needed.
 Each skill has one script under `.claude/skills/<skill>/scripts/` — except
 `scout-req`, which has one per document it reads, `individual-history`, whose
 script reads the database `import-individual-history` writes rather than a
-document of its own, and `generate-advancement-plan`, whose script opens neither
-and reads its record back out of `individual-history`:
+document of its own, `generate-advancement-plan`, whose script opens neither and
+reads its record back out of `individual-history`, and `troop-advancement-plan`,
+whose script reads `generate-advancement-plan`'s own analysis back out of it,
+one Scout at a time:
 
 - **`gta.rb`** (guide-to-advancement) — shells out to `pdftotext` to build a
   page-tagged text cache under the skill's `.cache/` (gitignored, rebuilt on
@@ -302,6 +314,27 @@ and reads its record back out of `individual-history`:
   `verify` checks no parse, because there is none; it checks that every match key
   still resolves and that its copies of `EAGLE_SLOTS` and the POR tenure
   algorithm still agree with what `individual-history` prints, Scout by Scout.
+- **`troop.rb`** (troop-advancement-plan) — the cohort arithmetic, and the only
+  script in the repo whose input is another skill's *analysis* rather than a
+  document or the database.  It runs `plan.rb json` once per Scout, four at a
+  time, so the troop plan and the individual plans are provably the same
+  analysis; the sole derivation it makes for itself is which requirements are
+  open at a rank, because themes key off `req_id` and `plan.rb json` prints
+  labels, and `verify` compares that count against `plan.rb`'s own Scout by
+  Scout.  Three things about it are wrong if reinvented.  **A theme spans every
+  unearned rank, not just the working one** — one cooking campout signs
+  Tenderfoot 2a, Second Class 2e and First Class 2b at once, so counting only
+  the working rank halves what an activity is worth, while counting everything
+  and calling it advancement overstates what a court of honor will show; both
+  figures are printed because they answer different questions.  **The closing
+  three are not a batch opportunity** — Scout Spirit, the conference and the
+  board are open for nearly every Scout, so a plain frequency count of open
+  requirements returns them at the top and says nothing; `CLOSING` keeps them
+  out of `THEMES` and feeds the load count instead.  And **the elapsed and
+  project requirements stay in the count of what a Scout has left but out of the
+  themes** — a Scout whose position of responsibility is still running is not
+  ready for a board, and calling them ready is the one mistake that number must
+  not make.
 - **`inventory.rb`** (badge-inventory) — downloads every tab of the troop's
   badge inventory Google Sheet as CSV over `net/http` and caches the rows in
   `.cache/inventory.db` via `sqlite3`, re-syncing when the cache is over six
@@ -323,16 +356,18 @@ cross-check catches a misparse.  Those facts live next to the code they
 constrain, not here: in **`SKILL.md` under "Facts about the ... the script
 depends on"** for the five TroopMaster skills, `scout-req` (which has one such
 section per document), `eagle-req`, `badge-inventory`, `individual-history`
-(whose source is the database rather than a document), and
-`generate-advancement-plan` (whose source is `individual-history`), and in
+(whose source is the database rather than a document),
+`generate-advancement-plan` (whose source is `individual-history`), and
+`troop-advancement-plan` (whose source is `generate-advancement-plan`), and in
 **header and inline comments** in `gta.rb` and `calendar.rb`.  `req.rb`,
 `changes.rb`, `eagle.rb`, `inventory.rb`, `coh.rb`, `individual_history.rb`,
-`history.rb`, and `plan.rb` each carry a second copy in their own header, next
-to the code the facts constrain.
+`history.rb`, `plan.rb`, and `troop.rb` each carry a second copy in their own
+header, next to the code the facts constrain.
 
-**Read them before changing a parser** — or, for `history.rb` and `plan.rb`,
-before changing what an answer is computed from. Each was established by getting
-it wrong first, and none is recoverable by reading the code alone — the code
+**Read them before changing a parser** — or, for `history.rb`, `plan.rb`, and
+`troop.rb`, before changing what an answer is computed from. Each was
+established by getting it wrong first, and none is recoverable by reading the
+code alone — the code
 shows what is done, not the alternative that was tried and silently produced
 garbage.
 
@@ -385,6 +420,17 @@ Two rules generalize across all of them:
   algorithm still agree with what `individual-history` prints for every Scout.
   A renamed badge or a table edited in one copy and not the other otherwise
   leaves a plan that reads perfectly and has quietly stopped applying a rule.
+  `troop.rb` is the same case one layer up, and it checks three things: it runs
+  `plan.rb verify` first and fails if that fails, since every per-Scout number
+  it prints comes from there; it asserts that **every requirement in the
+  imported data is claimed by exactly one** of `THEMES`, `CLOSING`, and
+  `INDIVIDUAL_LABELS`, in both directions, because a requirement TroopMaster
+  renumbers otherwise drops out of its theme in silence and a theme that has
+  quietly stopped counting anything reads exactly like a theme nobody needs; and
+  it compares its one local derivation — the count of open requirements at each
+  Scout's working rank — against `plan.rb`'s own, Scout by Scout.  A rank nobody
+  is working on carries no rows at all, so that case is a note rather than a
+  failure.
 - **The `pdftotext` invocations are measured, not preferences** — `-bbox` for the
   grids, `-layout` for the partials list and the MBC report, plain `pdftotext`
   rather than the `pdf-reader` gem for the Guide, `pdftohtml -xml` alongside
@@ -439,6 +485,13 @@ post-2025 badge enters unannounced, and 45 of the 95 badges on the troop's
 current whole-troop Individual History report changed effective Jan. 1, 2026, so
 the 2025 text is out of date for nearly half of them.
 
+`troop-advancement-plan` adds no badge check of its own: its SKILL.md routes the
+whole-troop check back through `individual_history.rb badges | req.rb check`,
+because at troop scale the question is already answered for every badge in the
+data and a per-Scout loop would only ask it 38 times.  Exit 3 there means no
+badge session goes on the calendar for the badges it names — a session sends a
+dozen Scouts to do the same wrong work at once.
+
 `plan.rb` pipes its own `names` through `req.rb check` for that same reason, one
 Scout at a time, and it is the last place the check can catch anything: a plan is
 what actually sends a Scout to do months of work.  Exit 3 there stops the plan —
@@ -456,8 +509,9 @@ The Ruby tables that name requirements — `RANKS` in `tfc.rb`, `CLOCKS`,
 `BLOCKS`, and `BADGE_PREREQS` in `te.rb`, `EAGLE_SLOTS` in `mbc.rb`,
 `RANK_LADDER` and `PALM_METALS` in `individual_history.rb`, `EAGLE_SLOTS` and
 `POR_MONTHS` in `history.rb`, and `EAGLE_SLOTS`, `POR_MONTHS`, `ACTIVE_MONTHS`,
-`FITNESS_CHAIN`, `CLOCKS`, and `BADGE_PREREQS` in `plan.rb` — are **match keys,
-not a second copy of the book.**  The three `EAGLE_SLOTS` tables are the one
+`FITNESS_CHAIN`, `CLOCKS`, and `BADGE_PREREQS` in `plan.rb`, and `THEMES`,
+`CLOSING`, and `INDIVIDUAL_LABELS` in `troop.rb` — are **match keys, not a
+second copy of the book.**  The three `EAGLE_SLOTS` tables are the one
 place the repo deliberately *departs* from the book rather than abbreviating it,
 and the reason is written out at `history.rb` above.  Two guards keep them in
 step, and neither covers all three: `plan.rb verify` compares its copy against
