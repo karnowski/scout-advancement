@@ -46,7 +46,7 @@ parentheses after each Scout's name: **every rank block below a Scout's printed
 rank must be complete.** A Life Scout with a hole in the Star block means the
 grid is misaligned, not that the Scout skipped something. `verify` also refuses
 any mark that does not land within four points of a column centre and any page
-where the 42 columns do not come out in the expected order.
+where the 43 columns do not come out in the expected order.
 
 ## Then check the badge names, before anything else
 
@@ -77,12 +77,20 @@ list.
 - **Do not read the grid any other way.** `pdftotext -layout` interleaves the
   three rank blocks and silently misassigns marks — a Life Scout's Eagle merit
   badges land under Star. Bounding boxes are the only reliable route.
-- **TroopMaster never marks the Star block's "SM Conf" cell.** It is blank for
-  every Scout, including Life Scouts whose Star rank is plainly complete. The
-  column carries no information at all, so the script drops it from every count
-  rather than reading it as incomplete. The rank in parentheses, plus Scout
-  Spirit and Star BOR, say whether the conference happened. **Do not report it as
-  a gap.**
+- **Star requirement 6 is two columns, and the second is blank for older Stars.**
+  By the 10/13/2026 report TroopMaster split the old "Child Protect" column into
+  "Safety Pamphlet" (6a) and "Safety Videos" (6b), carrying the old combined
+  sign-off into 6a only.  So "Safety Videos" is blank for every Scout who earned
+  Star before the split.  `verify` does not count that blank against a completed
+  Star block, since the rank in parentheses settles it, but `gaps` still reports
+  it for a First Class Scout working toward Star, where it is real.  **Do not
+  report it as a gap for a Star or Life Scout.**  An export from before the
+  split has 42 columns and now fails the column check.
+- **The Star block's "SM Conf" cell is read like any other.**  Through August
+  2026 TroopMaster never marked it, for anyone, and the script ignored it.  The
+  10/13/2026 report marks it for every Star and Life Scout, so that workaround is
+  gone.  If a future export goes blank there again for Scouts past Star, `verify`
+  will say so.
 - **The rank in parentheses after the name is authoritative.** Use it, not the
   marks, to decide what a Scout is working on. See the merit badge caveat below
   for why the marks cannot be trusted for this.
@@ -343,7 +351,7 @@ Suggested shape:
    meeting line.
 8. **Batch opportunities** — ranked by Scouts served.
 9. **Leadership to-do list** — ordered by urgency, not by size.
-10. **Notes on the source data** — the Star SM Conf defect, anything the parse
+10. **Notes on the source data** — the Star Safety Videos blanks, anything the parse
     could not resolve, and any figure that is an estimate.
 
 Write plans to `plans/target-eagle-YYYY-MM-DD.md`, dated from the report. Write

@@ -37,7 +37,12 @@ require "tempfile"
 #
 # Column names come out of the rotated headers intact, but "Merit Badge" repeats
 # and carries no number, so identity is positional. The parser asserts the whole
-# 42-column sequence before it trusts a single mark.
+# 43-column sequence before it trusts a single mark.
+#
+# Star req. 6 prints as two columns, "Safety Pamphlet" (6a) and "Safety Videos"
+# (6b).  Reports through August 2026 printed one "Child Protect" column for both
+# (42 columns in all); TroopMaster split it by the 10/13/2026 report, and an
+# older export now fails the column check rather than being read misaligned.
 #
 # Slot counts trace to Scouts BSA Requirements 2025: Star req. 3 is six merit
 # badges, Life req. 3 is five more (11 total), Eagle req. 3 is ten more (21).
@@ -57,14 +62,16 @@ BLOCKS = [
   {
     name: "Star", from: "First Class", badges: 6, board: "Star BOR",
     columns: ["Participation", "Scout Spirit", *["Merit Badge"] * 6,
-              "Serv Proj", "Lead Pos", "Child Protect", "SM Conf", "Star BOR"],
+              "Serv Proj", "Lead Pos", "Safety Pamphlet", "Safety Videos", "SM Conf", "Star BOR"],
     active: "four months active as a First Class Scout",
     active_days: 120,
     service: "six hours of service",
     position: "four months in a position of responsibility",
     position_days: 120,
-    training: "Child Protect",
-    training_label: "Child Protection exercises + Personal Safety Awareness videos (req. 6a/6b)"
+    training: {
+      "Safety Pamphlet" => "Child abuse prevention pamphlet exercises (req. 6a)",
+      "Safety Videos" => "Personal Safety Awareness videos (req. 6b)"
+    }
   },
   {
     name: "Life", from: "Star", badges: 5, board: "Life BOR",
@@ -75,8 +82,7 @@ BLOCKS = [
     service: "six hours of service, at least three conservation-related",
     position: "six months in a position of responsibility",
     position_days: 180,
-    training: "Teach Edge",
-    training_label: "Teaching EDGE demonstration (req. 6)"
+    training: { "Teach Edge" => "Teaching EDGE demonstration (req. 6)" }
   },
   {
     name: "Eagle", from: "Life", badges: 10, board: "Eagle BOR",
@@ -87,8 +93,7 @@ BLOCKS = [
     service: nil,
     position: "six months in a position of responsibility",
     position_days: 180,
-    training: nil,
-    training_label: nil
+    training: {}
   }
 ].freeze
 
@@ -105,12 +110,18 @@ AMOUNT_COLUMNS = ["Participation", SERVICE_COLUMN, "Lead Pos"].freeze
 # as one line — troop convention, because they happen together inside a meeting.
 CLOSING_COLUMNS = ["Scout Spirit", "SM Conf"].freeze
 
-# TroopMaster never marks the Star block's "SM Conf" cell, even for Life Scouts
-# whose Star rank is plainly complete. The column carries no information at all,
-# so it is excluded from every count rather than read as incomplete. The rank in
-# parentheses after the name, plus "Scout Spirit" and "Star BOR", say whether the
-# conference happened.
-BROKEN_CELLS = [["Star", "SM Conf"]].freeze
+# When TroopMaster split Star req. 6 into two columns it carried the old combined
+# sign-off into "Safety Pamphlet" only, so "Safety Videos" is blank for every
+# Scout who earned Star before the split (10/13/2026 report: all ten Star and
+# Life Scouts with an older Star, while the one recent Star has both).  A blank
+# there is a hole only for a Scout still working toward Star; in a completed
+# block the rank in parentheses settles it, and the neighbouring columns being
+# marked is what shows the grid is aligned.
+#
+# Through August 2026 the Star block's "SM Conf" cell was the opposite case,
+# never marked for anyone, and was ignored everywhere.  The 10/13/2026 report
+# marks it for every Star and Life Scout, so it is read like any other column.
+LEGACY_CELLS = [["Star", "Safety Videos"]].freeze
 
 MARK_RE       = /\A([X*+]|\d+)\z/
 COL_TOLERANCE = 4.0     # points from a column's centre
@@ -282,7 +293,9 @@ class Report
   def verify
     @scouts.flat_map do |scout|
       BLOCKS.take_while { |b| b[:name] != scout.working_block&.fetch(:name) }.flat_map do |block|
-        scout.blanks(block).map do |column, index|
+        scout.blanks(block).filter_map do |column, index|
+          next if LEGACY_CELLS.include?([block[:name], column])
+
           { scout: scout.name, rank: scout.rank, block: block[:name],
             column: column, index: index }
         end
@@ -371,8 +384,6 @@ class Scout
   def blanks(block)
     block[:columns].each_with_index.filter_map do |column, i|
       index = block[:columns][0...i].count(column)
-      next if BROKEN_CELLS.include?([block[:name], column])
-
       [column, index] unless done?(block, column, index)
     end
   end
@@ -495,7 +506,8 @@ module Render
              "#{Report::COLUMNS.size} columns matched."
         puts "     Every rank block below each Scout's printed rank is complete."
         puts "     Report date: #{report.date}."
-        puts "     Star 'SM Conf' ignored — TroopMaster never marks it."
+        puts "     Star 'Safety Videos' not required in a completed Star block — " \
+             "TroopMaster left it blank for Stars earned before the column split."
       end
       return
     end
@@ -653,8 +665,7 @@ module Render
     when "Lead Pos"       then "#{plural(left, 'day')} of #{block[:position]} left#{on}"
     when SERVICE_COLUMN   then "#{plural(left, 'hour')} remaining — #{block[:service]}"
     when "Eagle Proj"     then "Eagle Scout service project — the proposal needs four approvals"
-    when block[:training] then block[:training_label]
-    else column
+    else block[:training].fetch(column, column)
     end
   end
 
